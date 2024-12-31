@@ -73,7 +73,7 @@ function escapeData_(str) {
     .replace(/[\n]/g, '\\n')
     .replace(/[\r]/g, '\\r')
     .replace(/[\t]/g, '\\t');
-};
+}
 
 function getGmailTemplateFromDrafts_(subject_line){
   try {
@@ -122,6 +122,41 @@ function getGmailTemplateFromDrafts_(subject_line){
       }
     }
   }
+}
+
+/**
+ * Generates a QR code as a blob (image data).
+ * @param {string} data The string data to encode in the QR code.
+ * @param {number} size The size (both width and height) of the QR code image in pixels.
+ * @return {Blob} The QR code image as a blob.
+ */
+function generateQrCodeBlob(data, size) {
+  const chartUrl = `https://chart.googleapis.com/chart?chs=${size}x${size}&cht=qr&chl=${encodeURIComponent(data)}`;
+  try {
+    const response = UrlFetchApp.fetch(chartUrl);
+    if(response.getResponseCode() === 200){
+      return response.getBlob();
+    }else{
+      console.error(`Failed to fetch QR code. HTTP response code ${response.getResponseCode()}.`);
+      return null;
+    }
+  } catch (e) {
+     console.error(`Error generating QR code: ${e}`);
+     return null;
+  }
+}
+
+/**
+ * Generates data string for payment QR code.
+ * @param {string} recipientNumber The recipient's number.
+ * @param {string} variableSymbol The variable symbol for the transaction.
+ * @param {number} amount The amount of the payment.
+ * @param {number} currency The currency of the payment.
+ * @return {string} The formatted payment data string.
+ */
+function generatePaymentQrData(recipientNumber, variableSymbol, amount, currency) {
+    // Construct the data string
+    return `SPD*1.0*ACC:${recipientNumber}*AM:${amount.toFixed(2)}*VS:${variableSymbol}*CC:${currency}`;
 }
 
 // Load data from "plan" and "realizace" sheets at the beginning
@@ -315,9 +350,5 @@ function sendEmails(subjectLine, sheet=SpreadsheetApp.getActiveSheet()) {
    * @param {string} subject_line to search for draft message
    * @return {object} containing the subject, plain and html message body and attachments
   */
-
-  
-
-
 
 }
