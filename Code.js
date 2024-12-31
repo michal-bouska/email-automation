@@ -53,6 +53,7 @@ function onOpen() {
 function fillInTemplateFromObject_(template, data) {
   // We have two templates one for plain text and the html body
   // Stringifing the object means we can do a global replace
+  Logger.log(data)
   let template_string = JSON.stringify(template);
 
   // Token replacement
@@ -96,9 +97,9 @@ function getGmailTemplateFromDrafts_(subject_line){
     // Gets all attachments and inline image attachments
     const allInlineImages = draft.getMessage().getAttachments({includeInlineImages: true,includeAttachments:false});
     const attachments = draft.getMessage().getAttachments({includeInlineImages: false});
-    const htmlBody = msg.getBody(); 
+    const htmlBody = msg.getBody();
 
-    // Creates an inline image object with the image name as key 
+    // Creates an inline image object with the image name as key
     // (can't rely on image index as array based on insert order)
     const img_obj = allInlineImages.reduce((obj, i) => (obj[i.getName()] = i, obj) ,{});
 
@@ -111,7 +112,7 @@ function getGmailTemplateFromDrafts_(subject_line){
     // built an inlineImagesObj from inline image matches
     matches.forEach(match => inlineImagesObj[match[1]] = img_obj[match[2]]);
 
-    return {message: {subject: subject_line, text: msg.getPlainBody(), html:htmlBody}, 
+    return {message: {subject: subject_line, text: msg.getPlainBody(), html:htmlBody},
             attachments: attachments, inlineImages: inlineImagesObj };
   } catch(e) {
     throw new Error("Oops - can't find Gmail draft");
@@ -308,8 +309,22 @@ function parsePlanData() {
 }
 
 /**
- * Processes emails to send based on plan and realization data.
+ * Inserts QR codes into email content by replacing placeholders.
+ * @param {string} htmlBody The email HTML body.
+ * @param {object} inlineImages Object containing inline images to attach.
+ * @param {object} qrCodeObj The QR code object with all necessary fields.
+ * @return {string} Updated HTML body with QR code placeholders replaced.
  */
+function insertQrCodesIntoEmail(htmlBody, inlineImages, qrCodeObj) {
+  Logger.log("Start insertQrCodesIntoEmail")
+  const qrCodeBlob = generateQrCodeBlob(qrCodeObj);
+  if (qrCodeBlob) {
+    inlineImages[qrCodeObj.imageName] = qrCodeBlob;
+    htmlBody = htmlBody.replace(`{{${qrCodeObj.imageName}}}`, `<img data-surl="cid:${qrCodeObj.imageName}" src="cid:${qrCodeObj.imageName}" alt="QR Code">`);
+  }
+  return htmlBody;
+}
+
 function processEmails() {
   const planData = parsePlanData();
   const realizationData = SHEETS_DATA.realization.slice(1); // Skip headers
@@ -349,7 +364,23 @@ function processEmails() {
 
         try {
           const emailTemplate = getGmailTemplateFromDrafts_(plan.emailTopic);
+
+          // Create mapping of realization headers to their respective data
+          const dataMapping = realizationHeaders.reduce((map, header, index) => {
+            map[header] = recipientRow[index];
+            return map;
+          }, {});
+
+          // Include QR code mappings
+          if (SHEETS_DATA.qrCodes[plan.emailTopic]) {
+            SHEETS_DATA.qrCodes[plan.emailTopic].forEach(qrCodeObj => {
+              const consolidatedQrCode = consolidateQrCodeData(qrCodeObj, realizationData, realizationHeaders);
+              dataMapping[`${qrCodeObj.imageName}`] = `<img src="cid:${qrCodeObj.imageName}" alt="QR Code">`;
+            });
+          }
+
           const msgObj = fillInTemplateFromObject_(emailTemplate.message, {
+            ...dataMapping,
             recipient,
             conditionValue,
             sentValue
@@ -358,14 +389,11 @@ function processEmails() {
           let attachments = emailTemplate.attachments || [];
           let inlineImages = emailTemplate.inlineImages || {};
 
-          // Add QR codes to inlineImages
+          // Add QR codes and replace placeholders in email content
           if (SHEETS_DATA.qrCodes[plan.emailTopic]) {
             SHEETS_DATA.qrCodes[plan.emailTopic].forEach(qrCodeObj => {
               const consolidatedQrCode = consolidateQrCodeData(qrCodeObj, realizationData, realizationHeaders);
-              const qrCodeBlob = generateQrCodeBlob(consolidatedQrCode);
-              if (qrCodeBlob) {
-                inlineImages[consolidatedQrCode.imageName] = qrCodeBlob;
-              }
+              msgObj.html = insertQrCodesIntoEmail(msgObj.html, inlineImages, consolidatedQrCode);
             });
           }
 
@@ -387,6 +415,7 @@ function processEmails() {
     });
   });
 }
+
 
  
 /**
