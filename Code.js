@@ -27,6 +27,11 @@ limitations under the License.
 */
 const RECIPIENT_COL  = "Recipient";
 const EMAIL_SENT_COL = "Email Sent";
+
+function myFunction() {
+  Logger.log("Toto je výchozí funkce.");
+  processEmails();
+}
  
 /** 
  * Creates the menu item "Mail Merge" for user to run scripts on drop-down.
@@ -56,6 +61,8 @@ function fillInTemplateFromObject_(template, data) {
   });
   return  JSON.parse(template_string);
 }
+
+
 
 /**
  * Escape cell data to make JSON safe
@@ -125,52 +132,146 @@ function getGmailTemplateFromDrafts_(subject_line){
 }
 
 /**
- * Generates a QR code as a blob (image data).
- * @param {string} data The string data to encode in the QR code.
- * @param {number} size The size (both width and height) of the QR code image in pixels.
- * @return {Blob} The QR code image as a blob.
+ * Generates a QR code as a blob (image data) using QuickChart.
+ * @param {object} qrCodeObj The QR code object with all necessary fields.
+ * @return {Blob} The QR code image as a blob, or null if data is missing.
  */
-function generateQrCodeBlob(data, size) {
-  const chartUrl = `https://chart.googleapis.com/chart?chs=${size}x${size}&cht=qr&chl=${encodeURIComponent(data)}`;
+function generateQrCodeBlob(qrCodeObj) {
+  if (!qrCodeObj) {
+    console.error("QR code data object is missing.");
+    return null;
+  }
+
+  const dataString = generatePaymentQrData(
+    qrCodeObj.accountNumber,
+    qrCodeObj.bankCode,
+    qrCodeObj.currency,
+    qrCodeObj.amount,
+    qrCodeObj.variableSymbol,
+    qrCodeObj.message
+  );
+
+  const chartUrl = `https://quickchart.io/qr?text=${encodeURIComponent(dataString)}&size=${qrCodeObj.size}`;
+
   try {
     const response = UrlFetchApp.fetch(chartUrl);
-    if(response.getResponseCode() === 200){
+    if (response.getResponseCode() === 200) {
       return response.getBlob();
-    }else{
+    } else {
       console.error(`Failed to fetch QR code. HTTP response code ${response.getResponseCode()}.`);
       return null;
     }
   } catch (e) {
-     console.error(`Error generating QR code: ${e}`);
-     return null;
+    console.error(`Error generating QR code: ${e.message}`);
+    return null;
   }
 }
 
 /**
  * Generates data string for payment QR code.
- * @param {string} recipientNumber The recipient's number.
- * @param {string} variableSymbol The variable symbol for the transaction.
+ * @param {string} accountNumber The account number of the recipient.
+ * @param {string} bankCode The bank code of the recipient.
+ * @param {string} currency The currency of the payment.
  * @param {number} amount The amount of the payment.
- * @param {number} currency The currency of the payment.
+ * @param {string} variableSymbol The variable symbol for the transaction.
+ * @param {string} message An optional message for the payment.
  * @return {string} The formatted payment data string.
  */
-function generatePaymentQrData(recipientNumber, variableSymbol, amount, currency) {
-    // Construct the data string
-    return `SPD*1.0*ACC:${recipientNumber}*AM:${amount.toFixed(2)}*VS:${variableSymbol}*CC:${currency}`;
+function generatePaymentQrData(accountNumber, bankCode, currency, amount, variableSymbol, message) {
+  let dataString = `SPD*1.0*ACC:${accountNumber}/${bankCode}*AM:${amount.toFixed(2)}*CC:${currency}`;
+
+  if (variableSymbol) {
+    dataString += `*VS:${variableSymbol}`;
+  }
+
+  if (message) {
+    dataString += `*MSG:${message}`;
+  }
+
+  return dataString;
 }
 
-// Load data from "plan" and "realizace" sheets at the beginning
+/**
+ * Consolidates data for QR code generation.
+ * @param {object} qrCodeObj The QR code object with all necessary fields.
+ * @param {Array} realizationData The realization data (rows from the sheet).
+ * @param {Array} realizationHeaders The headers for the realization data.
+ * @return {object} Consolidated QR code data with resolved variable symbol.
+ */
+function consolidateQrCodeData(qrCodeObj, realizationData, realizationHeaders) {
+  if (!qrCodeObj) {
+    throw new Error("QR code object is required.");
+  }
+
+  if (qrCodeObj.variableSymbol && qrCodeObj.variableSymbolColumn) {
+    throw new Error("Only one of variableSymbol or variableSymbolColumn should be non-empty.");
+  }
+
+  let resolvedVariableSymbol = qrCodeObj.variableSymbol;
+
+  if (!resolvedVariableSymbol && qrCodeObj.variableSymbolColumn) {
+    const columnIdx = realizationHeaders.indexOf(qrCodeObj.variableSymbolColumn);
+    if (columnIdx === -1) {
+      throw new Error(`Column ${qrCodeObj.variableSymbolColumn} not found in realization data headers.`);
+    }
+
+    // Assuming the first row of realizationData is the one to use for variable symbol
+    resolvedVariableSymbol = realizationData[0][columnIdx];
+
+    if (resolvedVariableSymbol == null) {
+      throw new Error(`No value found in realization data for column ${qrCodeObj.variableSymbolColumn}.`);
+    }
+  }
+
+  return {
+    ...qrCodeObj,
+    variableSymbol: resolvedVariableSymbol
+  };
+}
+
+
 const SHEETS_DATA = (() => {
   const spreadsheet = SpreadsheetApp.getActiveSpreadsheet();
   const planSheet = spreadsheet.getSheetByName("plan");
   const realizationSheet = spreadsheet.getSheetByName("realizace");
-  
+  const qrCodeSheet = spreadsheet.getSheetByName("QRCodes");
+
   const planData = planSheet ? planSheet.getDataRange().getValues() : [];
   const realizationData = realizationSheet ? realizationSheet.getDataRange().getValues() : [];
+  const qrCodeData = qrCodeSheet ? qrCodeSheet.getDataRange().getValues() : [];
+
+  // Parse QR Code data into objects mapped by Email Topic
+  const qrCodeHeaders = qrCodeData[0];
+  const qrCodeObjects = qrCodeData.slice(1).reduce((map, row) => {
+    const qrCodeObj = {
+      emailTopic: row[qrCodeHeaders.indexOf("EmailTopic")],
+      imageName: row[qrCodeHeaders.indexOf("ImageName")],
+      accountNumber: row[qrCodeHeaders.indexOf("AccountNumber")],
+      bankCode: row[qrCodeHeaders.indexOf("BankCode")],
+      currency: row[qrCodeHeaders.indexOf("Currency")],
+      amount: row[qrCodeHeaders.indexOf("Amount")],
+      variableSymbol: row[qrCodeHeaders.indexOf("VariableSymbol")],
+      variableSymbolColumn: row[qrCodeHeaders.indexOf("VariableSymbolColumn")],
+      message: row[qrCodeHeaders.indexOf("Message")],
+      size: row[qrCodeHeaders.indexOf("Size")]
+    };
+
+    if (qrCodeObj.emailTopic) {
+      if (!map[qrCodeObj.emailTopic]) {
+        map[qrCodeObj.emailTopic] = [];
+      }
+      map[qrCodeObj.emailTopic].push(qrCodeObj);
+    }
+
+    return map;
+  }, {});
+
+  Logger.log("Loaded QR Code Data: %s", JSON.stringify(qrCodeObjects, null, 2));
 
   return {
     plan: planData,
-    realization: realizationData
+    realization: realizationData,
+    qrCodes: qrCodeObjects
   };
 })();
 
@@ -253,12 +354,27 @@ function processEmails() {
             conditionValue,
             sentValue
           });
+
+          let attachments = emailTemplate.attachments || [];
+          let inlineImages = emailTemplate.inlineImages || {};
+
+          // Add QR codes to inlineImages
+          if (SHEETS_DATA.qrCodes[plan.emailTopic]) {
+            SHEETS_DATA.qrCodes[plan.emailTopic].forEach(qrCodeObj => {
+              const consolidatedQrCode = consolidateQrCodeData(qrCodeObj, realizationData, realizationHeaders);
+              const qrCodeBlob = generateQrCodeBlob(consolidatedQrCode);
+              if (qrCodeBlob) {
+                inlineImages[consolidatedQrCode.imageName] = qrCodeBlob;
+              }
+            });
+          }
+
           GmailApp.sendEmail(recipient, msgObj.subject, msgObj.text, {
             htmlBody: msgObj.html,
-            attachments: emailTemplate.attachments,
-            inlineImages: emailTemplate.inlineImages
+            attachments: attachments,
+            inlineImages: inlineImages
           });
-          console.log(`Email sent to ${recipient} for topic: ${plan.emailTopic}`);
+
           sentStatus = new Date(); // Store current date and time
         } catch (error) {
           console.error(`Failed to send email to ${recipient}: ${error.message}`);
