@@ -213,6 +213,7 @@ function processEmails() {
   const planData = parsePlanData();
   const realizationData = SHEETS_DATA.realization.slice(1); // Skip headers
   const realizationHeaders = SHEETS_DATA.realization[0]; // Get headers
+  const realizationSheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName("realizace");
 
   const recipientIdx = realizationHeaders.indexOf(RECIPIENT_COL);
   if (recipientIdx === -1) {
@@ -243,6 +244,8 @@ function processEmails() {
           `Preparing to send email for topic: ${plan.emailTopic} to recipient: ${recipient} at row ${recipientIndex + 2}.`
         );
 
+        let sentStatus;
+
         try {
           const emailTemplate = getGmailTemplateFromDrafts_(plan.emailTopic);
           const msgObj = fillInTemplateFromObject_(emailTemplate.message, {
@@ -256,9 +259,14 @@ function processEmails() {
             inlineImages: emailTemplate.inlineImages
           });
           console.log(`Email sent to ${recipient} for topic: ${plan.emailTopic}`);
+          sentStatus = new Date(); // Store current date and time
         } catch (error) {
           console.error(`Failed to send email to ${recipient}: ${error.message}`);
+          sentStatus = error.message; // Store error message
         }
+
+        // Update the "realizace" sheet with the status
+        realizationSheet.getRange(recipientIndex + 2, sentColIdx + 1).setValue(sentStatus);
       }
     });
   });
