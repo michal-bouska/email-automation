@@ -39,7 +39,7 @@ function myFunction() {
 function onOpen() {
   const ui = SpreadsheetApp.getUi();
   ui.createMenu('Mail Merge')
-      .addItem('Send Emails', 'sendEmails')
+      .addItem('Send Emails', 'myFunction')
       .addToUi();
 }
 
@@ -53,7 +53,7 @@ function onOpen() {
 function fillInTemplateFromObject_(template, data) {
   // We have two templates one for plain text and the html body
   // Stringifing the object means we can do a global replace
-  Logger.log(data)
+  // Logger.log(`Try to fill template: Template = ${JSON.stringify(template, null, 2)}, Data = ${JSON.stringify(data, null, 2)}`);
   let template_string = JSON.stringify(template);
 
   // Token replacement
@@ -72,6 +72,8 @@ function fillInTemplateFromObject_(template, data) {
  * @return {string} escaped string
 */
 function escapeData_(str) {
+  // Logger.log(`Escaping data: ${str}, Type: ${typeof str}`);
+  str = String(str);
   return str
     .replace(/[\\]/g, '\\\\')
     .replace(/[\"]/g, '\\\"')
@@ -361,56 +363,123 @@ function processEmails() {
         );
 
         let sentStatus;
+        let dataMapping;
+        let consolidatedQrCode;
+        let emailTemplate;
+        let msgObj;
+        let attachments;
+        let inlineImages;
 
+        Logger.log("Start looking for mail template.")
         try {
-          const emailTemplate = getGmailTemplateFromDrafts_(plan.emailTopic);
+          emailTemplate = getGmailTemplateFromDrafts_(plan.emailTopic);
+        }
+        catch (error) {
+          console.error(`Failed get template from drafts ${recipient}: ${error.message}`);
+          sentStatus = `${error.message} at ${Date()}`; // Formátování zprávy
+          console.log("Stacktrace:", error.stack);
+          realizationSheet.getRange(recipientIndex + 2, sentColIdx + 1).setValue(sentStatus);
+          return null
+        }
 
+        Logger.log("Start preparing data mapping.")
+        try {
           // Create mapping of realization headers to their respective data
-          const dataMapping = realizationHeaders.reduce((map, header, index) => {
+          dataMapping = realizationHeaders.reduce((map, header, index) => {
             map[header] = recipientRow[index];
             return map;
           }, {});
+        }
+        catch (error) {
+          console.error(`Failed to parse realisation ${recipient}: ${error.message}`);
+          sentStatus = `${error.message} at ${new Date().toISOString()}`; // Formátování zprávy
+          console.log("Stacktrace:", error.stack);
+          realizationSheet.getRange(recipientIndex + 2, sentColIdx + 1).setValue(sentStatus);
+          return null
+        }
 
+        Logger.log("Start preparing qr code data mapping.")
+        try {
           // Include QR code mappings
           if (SHEETS_DATA.qrCodes[plan.emailTopic]) {
             SHEETS_DATA.qrCodes[plan.emailTopic].forEach(qrCodeObj => {
-              const consolidatedQrCode = consolidateQrCodeData(qrCodeObj, realizationData, realizationHeaders);
+              consolidatedQrCode = consolidateQrCodeData(qrCodeObj, realizationData, realizationHeaders);
               dataMapping[`${qrCodeObj.imageName}`] = `<img src="cid:${qrCodeObj.imageName}" alt="QR Code">`;
             });
           }
+        }
+        catch (error) {
+          console.error(`Failed to generate qr code ${recipient}: ${error.message}`);
+          sentStatus = `${error.message} at ${new Date().toISOString()}`; // Formátování zprávy
+          console.log("Stacktrace:", error.stack);
+          realizationSheet.getRange(recipientIndex + 2, sentColIdx + 1).setValue(sentStatus);
+          return null
+        }
 
-          const msgObj = fillInTemplateFromObject_(emailTemplate.message, {
+        Logger.log("Start fill in template object.")
+        try {
+          msgObj = fillInTemplateFromObject_(emailTemplate.message, {
             ...dataMapping,
             recipient,
             conditionValue,
             sentValue
           });
+        }
+        catch (error) {
+          console.error(`Failed to fill template ${recipient}: ${error.message}`);
+          sentStatus = `${error.message} at ${new Date().toISOString()}`; // Formátování zprávy
+          console.log("Stacktrace:", error.stack);
+          realizationSheet.getRange(recipientIndex + 2, sentColIdx + 1).setValue(sentStatus);
+          return null
+        }
 
-          let attachments = emailTemplate.attachments || [];
-          let inlineImages = emailTemplate.inlineImages || {};
+        Logger.log("Start inlining images.")
+        try {
+          attachments = emailTemplate.attachments || [];
+          inlineImages = emailTemplate.inlineImages || {};
 
           // Add QR codes and replace placeholders in email content
           if (SHEETS_DATA.qrCodes[plan.emailTopic]) {
             SHEETS_DATA.qrCodes[plan.emailTopic].forEach(qrCodeObj => {
-              const consolidatedQrCode = consolidateQrCodeData(qrCodeObj, realizationData, realizationHeaders);
+              consolidatedQrCode = consolidateQrCodeData(qrCodeObj, realizationData, realizationHeaders);
               msgObj.html = insertQrCodesIntoEmail(msgObj.html, inlineImages, consolidatedQrCode);
             });
           }
+        }
+        catch (error) {
+          console.error(`Failed to inline images ${recipient}: ${error.message}`);
+          sentStatus = `${error.message} at ${new Date().toISOString()}`; // Formátování zprávy
+          console.log("Stacktrace:", error.stack);
+          realizationSheet.getRange(recipientIndex + 2, sentColIdx + 1).setValue(sentStatus);
+          return null
+        }
 
+        Logger.log("Start sending email.")
+        try {
           GmailApp.sendEmail(recipient, msgObj.subject, msgObj.text, {
             htmlBody: msgObj.html,
             attachments: attachments,
             inlineImages: inlineImages
           });
 
-          sentStatus = new Date(); // Store current date and time
-        } catch (error) {
-          console.error(`Failed to send email to ${recipient}: ${error.message}`);
-          sentStatus = error.message; // Store error message
+          sentStatus = new Date().toISOString(); // Store current date and time
+        }
+        catch (error) {
+          console.error(`Failed to send prepared email ${recipient}: ${error.message}`);
+          sentStatus = `${error.message} at ${new Date().toISOString()}`; // Formátování zprávy
+          console.log("Stacktrace:", error.stack);
+          realizationSheet.getRange(recipientIndex + 2, sentColIdx + 1).setValue(sentStatus);
+          return null
         }
 
         // Update the "realizace" sheet with the status
-        realizationSheet.getRange(recipientIndex + 2, sentColIdx + 1).setValue(sentStatus);
+        const range = realizationSheet.getRange(recipientIndex + 2, sentColIdx + 1);
+
+        // Nastavení hodnoty buňky
+        range.setValue(sentStatus);
+
+        // Nastavení formátu na datum a čas (např. "dd.MM.yyyy HH:mm:ss")
+        range.setNumberFormat("dd.MM.yyyy HH:mm:ss");
       }
     });
   });
