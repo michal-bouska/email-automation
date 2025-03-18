@@ -4,8 +4,20 @@
  * with additional parsing for specific transaction keys in recipient notes
  */
 
-// Replace with your own token from Fio Bank
-const FIO_API_TOKEN = 'your_fio_token_here';
+// Function to get Fio token from secure storage
+function getFioToken() {
+  // Try to get token from Properties Service
+  const scriptProperties = PropertiesService.getScriptProperties();
+  const token = scriptProperties.getProperty('FIO_API_TOKEN');
+
+  if (!token) {
+    Logger.log('Fio API token not found in Properties Service');
+    return 'your_fio_token_here'; // Default fallback value
+  }
+
+  return token;
+}
+
 
 // Variable symbol key to filter transactions
 const VARIABLE_SYMBOL_KEY = '72405';
