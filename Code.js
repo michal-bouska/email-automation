@@ -181,7 +181,8 @@ function generateQrCodeBlob(qrCodeObj) {
  * @return {string} The formatted payment data string.
  */
 function generatePaymentQrData(accountNumber, bankCode, currency, amount, variableSymbol, message) {
-  let dataString = `SPD*1.0*ACC:${accountNumber}/${bankCode}*AM:${amount.toFixed(2)}*CC:${currency}`;
+  let iban = convertToIBAN(accountNumber, bankCode);
+  let dataString = `SPD*1.0*ACC:${iban}*AM:${amount.toFixed(2)}*CC:${currency}`;
 
   if (variableSymbol) {
     dataString += `*VS:${variableSymbol}`;
