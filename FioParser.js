@@ -76,8 +76,10 @@ function parseTransactionNote(note) {
     // Keep only strings with exactly 8 characters (keys)
     const validKeys = parts.filter(part => part.length === 8);
 
+    Logger.log('Valid keys: ' + validKeys.join(';'));
+
     return {
-        keys: validKeys.join(','),
+        keys: validKeys.join(';'),
         count: validKeys.length
     };
 }
@@ -90,9 +92,25 @@ function parseTransactionNote(note) {
  * @return {boolean} - Whether the transaction was processed and added to sheet
  */
 function processTransaction(transaction, sheet, variableSymbolKey) {
-  const variableSymbol = transaction.variableSymbol?.value || '';
-  const message = transaction.message?.value || '';
-  const transactionId = transaction.id?.value || '';
+  // Extract values from transaction columns
+  const variableSymbol = transaction.column5?.value || '';
+  const message = transaction.column16?.value || '';
+  const transactionId = transaction.column22?.value || '';
+
+  // Get date, amount, currency
+  const date = transaction.column0?.value || '';
+  const amount = transaction.column1?.value || '';
+  const currency = transaction.column14?.value || '';
+
+  // Get account info
+  const accountNumber = transaction.column2?.value || '';
+  const bankCode = transaction.column3?.value || '';
+
+  // Get sender info (use column10 or column7 as fallback)
+  const senderName = transaction.column10?.value || transaction.column7?.value || '';
+
+  // Get transaction type
+  const type = transaction.column8?.value || '';
 
   let parsedNote;
 
@@ -104,13 +122,13 @@ function processTransaction(transaction, sheet, variableSymbolKey) {
   }
 
   const row = [
-    transaction.date?.value || '',
-    transaction.amount?.value || '',
-    transaction.currency?.value || '',
-    transaction.accountNumber?.value || '',
-    transaction.bankCode?.value || '',
-    transaction.senderName?.value || '',
-    transaction.type?.value || '',
+    date,
+    amount,
+    currency,
+    accountNumber,
+    bankCode,
+    senderName,
+    type,
     message,
     variableSymbol,
     parsedNote.keys,
@@ -196,9 +214,9 @@ function writeTransactionsToSheet(sheetName) {
 
 
 /**
- * Create a trigger to automatically fetch transactions every day
+ * Create a trigger to automatically run the target function every 5 minutes
  */
-function createDailyTrigger() {
+function createFiveMinuteTrigger() {
     // Delete any existing triggers with the same function name
     const triggers = ScriptApp.getProjectTriggers();
     for (let i = 0; i < triggers.length; i++) {
@@ -207,11 +225,10 @@ function createDailyTrigger() {
         }
     }
 
-    // Create a new trigger to run daily
+    // Create a new trigger to run every 5 minutes
     ScriptApp.newTrigger('runUpdate')
         .timeBased()
-        .everyDays(1)
-        .atHour(6) // Run at 6 AM
+        .everyMinutes(5) // Run every 5 minutes
         .create();
 }
 
