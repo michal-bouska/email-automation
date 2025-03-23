@@ -1,15 +1,21 @@
 /**
  * Converts Czech bank account number to IBAN format
- * @param {string} accountNumber - main account number
- * @param {string} bankCode - bank code
- * @param {string} prefix - account prefix (optional)
+ * @param {string|number} accountNumber - main account number
+ * @param {string|number} bankCode - bank code
+ * @param {string|number} prefix - account prefix (optional)
  * @returns {string} - IBAN formatted as CZxx xxxx xxxx xxxx xxxx xxxx
  */
 function convertToIBAN(accountNumber, bankCode, prefix = "") {
   // Validate input parameters
-  if (!accountNumber || !bankCode) {
+  if (accountNumber === undefined || accountNumber === null ||
+      bankCode === undefined || bankCode === null) {
     throw new Error("Account number and bank code are required parameters");
   }
+
+  // Convert all parameters to strings
+  accountNumber = String(accountNumber);
+  bankCode = String(bankCode);
+  prefix = prefix !== undefined && prefix !== null ? String(prefix) : "";
 
   // Remove spaces and other non-numeric characters
   accountNumber = accountNumber.replace(/\D/g, "");
@@ -67,6 +73,8 @@ function formatIBAN(iban) {
   return iban.match(/.{1,4}/g).join(" ");
 }
 
-// Example usage
-// const iban = convertToIBAN("123456789", "0800", "19");
-// console.log(iban); // Prints: CZ65 0800 0000 1900 1234 5678
+// Example usage with different parameter types
+// const iban1 = convertToIBAN("123456789", "0800", "19");      // All strings
+// const iban2 = convertToIBAN(123456789, 800, 19);             // All integers
+// const iban3 = convertToIBAN("123456789", 800, 19);           // Mixed types
+// console.log(iban1); // Prints: CZ65 0800 0000 1900 1234 5678
