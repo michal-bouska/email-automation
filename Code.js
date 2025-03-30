@@ -1,26 +1,4 @@
-// To learn how to use this script, refer to the documentation:
-// https://developers.google.com/apps-script/samples/automations/mail-merge
 
-/*
-Copyright 2022 Martin Hawksey
-
-Licensed under the Apache License, Version 2.0 (the "License");
-you may not use this file except in compliance with the License.
-You may obtain a copy of the License at
-
-    https://www.apache.org/licenses/LICENSE-2.0
-
-Unless required by applicable law or agreed to in writing, software
-distributed under the License is distributed on an "AS IS" BASIS,
-WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-See the License for the specific language governing permissions and
-limitations under the License.
-*/
- 
-/**
- * @OnlyCurrentDoc
-*/
- 
 /**
  * Change these to match the column names you are using for email 
  * recipient addresses and email sent column.
@@ -358,7 +336,7 @@ function processEmails() {
         `Recipient = ${recipient}, Condition Value = ${conditionValue}, Sent Value = ${sentValue}`
       );
 
-      if (conditionValue === 1 && sentValue === "") {
+      if ((conditionValue === 1 && sentValue === "") || (conditionValue === 2)) {
         console.log(
           `Preparing to send email for topic: ${plan.emailTopic} to recipient: ${recipient} at row ${recipientIndex + 2}.`
         );
