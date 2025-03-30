@@ -1,3 +1,10 @@
+
+/**
+ * Change these to match the column names you are using for email
+ * recipient addresses..
+*/
+const RECIPIENT_COL  = "Recipient";
+
 function myFunction() {
   Logger.log("Toto je výchozí funkce.");
   processEmails();
