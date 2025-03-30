@@ -77,54 +77,54 @@ function parseTransactionNote(note) {
  * @return {boolean} - Whether the transaction was processed and added to sheet
  */
 function processTransaction(transaction, sheet, variableSymbolKey) {
-  // Extract values from transaction columns
-  const variableSymbol = transaction.column5?.value || '';
-  const message = transaction.column16?.value || '';
-  const transactionId = transaction.column22?.value || '';
+    // Extract values from transaction columns
+    const variableSymbol = transaction.column5?.value || '';
+    const message = transaction.column16?.value || '';
+    const transactionId = transaction.column22?.value || '';
 
-  // Get date, amount, currency
-  const date = transaction.column0?.value || '';
-  const amount = transaction.column1?.value || '';
-  const currency = transaction.column14?.value || '';
+    // Get date, amount, currency
+    const date = transaction.column0?.value || '';
+    const amount = transaction.column1?.value || '';
+    const currency = transaction.column14?.value || '';
 
-  // Get account info
-  const accountNumber = transaction.column2?.value || '';
-  const bankCode = transaction.column3?.value || '';
+    // Get account info
+    const accountNumber = transaction.column2?.value || '';
+    const bankCode = transaction.column3?.value || '';
 
-  // Get sender info (use column10 or column7 as fallback)
-  const senderName = transaction.column10?.value || transaction.column7?.value || '';
+    // Get sender info (use column10 or column7 as fallback)
+    const senderName = transaction.column10?.value || transaction.column7?.value || '';
 
-  // Get transaction type
-  const type = transaction.column8?.value || '';
+    // Get transaction type
+    const type = transaction.column8?.value || '';
 
-  let parsedNote;
+    let parsedNote;
 
-  // Parse the transaction note
-  if (variableSymbol === variableSymbolKey) {
-    parsedNote = parseTransactionNote(message);
-  } else {
-    parsedNote = {keys: '', count: 0};
-  }
+    // Parse the transaction note
+    if (variableSymbol === variableSymbolKey) {
+        parsedNote = parseTransactionNote(message);
+    } else {
+        parsedNote = {keys: '', count: 0};
+    }
 
-  const row = [
-    date,
-    amount,
-    currency,
-    accountNumber,
-    bankCode,
-    senderName,
-    type,
-    message,
-    variableSymbol,
-    parsedNote.keys,
-    parsedNote.count,
-    transactionId
-  ];
+    const row = [
+        date,
+        amount,
+        currency,
+        accountNumber,
+        bankCode,
+        senderName,
+        type,
+        message,
+        variableSymbol,
+        parsedNote.keys,
+        parsedNote.count,
+        transactionId
+    ];
 
-  sheet.appendRow(row);
+    sheet.appendRow(row);
 
-  // Return true if it was a variable symbol match, false otherwise
-  return variableSymbol === variableSymbolKey;
+    // Return true if it was a variable symbol match, false otherwise
+    return variableSymbol === variableSymbolKey;
 }
 
 /**
@@ -133,69 +133,69 @@ function processTransaction(transaction, sheet, variableSymbolKey) {
  * @param {string} sheetName - Name of the sheet tab
  */
 function writeTransactionsToSheet() {
-  // Get new transactions data
-  const transactionsData = getLastTransactions();
+    // Get new transactions data
+    const transactionsData = getLastTransactions();
 
-  if (!transactionsData || !transactionsData.accountStatement || !transactionsData.accountStatement.transactionList) {
-    Logger.log('No new transaction data available');
-    return;
-  }
-
-  // Get the transactions array
-  const transactions = transactionsData.accountStatement.transactionList.transaction || [];
-
-  if (transactions.length === 0) {
-    Logger.log('No new transactions found');
-    return;
-  }
-
-  // Open the specified Google Sheet
-  const sheetName = FIO_CONFIG.FIO_SYNC_SHEET;
-  const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(sheetName);
-  if (!sheet) {
-    Logger.log(`Sheet "${sheetName}" not found in the spreadsheet`);
-    return;
-  }
-
-  // Prepare headers with columns for parsed keys and count
-  const headers = [
-    'Date', 'Amount', 'Currency', 'Account', 'Bank Code',
-    'Sender Name', 'Transaction Type', 'Message', 'Variable Symbol', 'Parsed Keys', 'Keys Count', 'Transaction ID'
-  ];
-
-  // Check if the sheet is empty and add headers if needed
-  const existingData = sheet.getDataRange().getValues();
-  if (existingData.length === 0) {
-    sheet.appendRow(headers);
-  } else if (existingData[0].length < headers.length) {
-    // Headers exist but may be missing our new columns - update them
-    sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
-  }
-
-  // Counter for new transactions
-  let newTransactionsCount = 0;
-  let filteredTransactionsCount = 0;
-
-  // Process each transaction
-  transactions.forEach(transaction => {
-    newTransactionsCount++;
-
-    // Use the named function to process the transaction
-    const wasProcessed = processTransaction(transaction, sheet, FIO_CONFIG.VARIABLE_SYMBOL_KEY);
-
-    if (wasProcessed) {
-      filteredTransactionsCount++;
+    if (!transactionsData || !transactionsData.accountStatement || !transactionsData.accountStatement.transactionList) {
+        Logger.log('No new transaction data available');
+        return;
     }
-  });
 
-  // Format the sheet (only if we have data)
-  if (existingData.length === 0 || filteredTransactionsCount > 0) {
-    sheet.getRange(1, 1, 1, headers.length).setFontWeight('bold');
-    sheet.autoResizeColumns(1, headers.length);
-  }
+    // Get the transactions array
+    const transactions = transactionsData.accountStatement.transactionList.transaction || [];
 
-  Logger.log(`Total new transactions: ${newTransactionsCount}`);
-  Logger.log(`Added ${filteredTransactionsCount} new transactions with variable symbol ${FIO_CONFIG.VARIABLE_SYMBOL_KEY}`);
+    if (transactions.length === 0) {
+        Logger.log('No new transactions found');
+        return;
+    }
+
+    // Open the specified Google Sheet
+    const sheetName = FIO_CONFIG.FIO_SYNC_SHEET;
+    const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(sheetName);
+    if (!sheet) {
+        Logger.log(`Sheet "${sheetName}" not found in the spreadsheet`);
+        return;
+    }
+
+    // Prepare headers with columns for parsed keys and count
+    const headers = [
+        'Date', 'Amount', 'Currency', 'Account', 'Bank Code',
+        'Sender Name', 'Transaction Type', 'Message', 'Variable Symbol', 'Parsed Keys', 'Keys Count', 'Transaction ID'
+    ];
+
+    // Check if the sheet is empty and add headers if needed
+    const existingData = sheet.getDataRange().getValues();
+    if (existingData.length === 0) {
+        sheet.appendRow(headers);
+    } else if (existingData[0].length < headers.length) {
+        // Headers exist but may be missing our new columns - update them
+        sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
+    }
+
+    // Counter for new transactions
+    let newTransactionsCount = 0;
+    let filteredTransactionsCount = 0;
+
+    // Process each transaction
+    transactions.forEach(transaction => {
+        newTransactionsCount++;
+
+        // Use the named function to process the transaction
+        const wasProcessed = processTransaction(transaction, sheet, FIO_CONFIG.VARIABLE_SYMBOL_KEY);
+
+        if (wasProcessed) {
+            filteredTransactionsCount++;
+        }
+    });
+
+    // Format the sheet (only if we have data)
+    if (existingData.length === 0 || filteredTransactionsCount > 0) {
+        sheet.getRange(1, 1, 1, headers.length).setFontWeight('bold');
+        sheet.autoResizeColumns(1, headers.length);
+    }
+
+    Logger.log(`Total new transactions: ${newTransactionsCount}`);
+    Logger.log(`Added ${filteredTransactionsCount} new transactions with variable symbol ${FIO_CONFIG.VARIABLE_SYMBOL_KEY}`);
 }
 
 

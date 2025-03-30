@@ -10,7 +10,7 @@ function loadConfig(propertyDefs, options = {}) {
     const scriptProperties = PropertiesService.getScriptProperties();
 
     // Set default options
-    const { throwOnMissing = false } = options;
+    const {throwOnMissing = false} = options;
 
     // Initialize result object
     const config = {};
@@ -50,46 +50,46 @@ function loadConfig(propertyDefs, options = {}) {
  * @returns {string} - IBAN formatted as CZxx xxxx xxxx xxxx xxxx xxxx
  */
 function convertToIBAN(accountNumber, bankCode, prefix = "") {
-  // Validate input parameters
-  if (accountNumber === undefined || accountNumber === null ||
-      bankCode === undefined || bankCode === null) {
-    throw new Error("Account number and bank code are required parameters");
-  }
+    // Validate input parameters
+    if (accountNumber === undefined || accountNumber === null ||
+        bankCode === undefined || bankCode === null) {
+        throw new Error("Account number and bank code are required parameters");
+    }
 
-  // Convert all parameters to strings
-  accountNumber = String(accountNumber);
-  bankCode = String(bankCode);
-  prefix = prefix !== undefined && prefix !== null ? String(prefix) : "";
+    // Convert all parameters to strings
+    accountNumber = String(accountNumber);
+    bankCode = String(bankCode);
+    prefix = prefix !== undefined && prefix !== null ? String(prefix) : "";
 
-  // Remove spaces and other non-numeric characters
-  accountNumber = accountNumber.replace(/\D/g, "");
-  prefix = prefix.replace(/\D/g, "");
-  bankCode = bankCode.replace(/\D/g, "");
+    // Remove spaces and other non-numeric characters
+    accountNumber = accountNumber.replace(/\D/g, "");
+    prefix = prefix.replace(/\D/g, "");
+    bankCode = bankCode.replace(/\D/g, "");
 
-  // Pad with zeros from left to correct length
-  accountNumber = accountNumber.padStart(10, "0");
-  prefix = prefix.padStart(6, "0");
-  bankCode = bankCode.padStart(4, "0");
+    // Pad with zeros from left to correct length
+    accountNumber = accountNumber.padStart(10, "0");
+    prefix = prefix.padStart(6, "0");
+    bankCode = bankCode.padStart(4, "0");
 
-  // BBAN (Basic Bank Account Number) format for Czech Republic
-  const bban = bankCode + prefix + accountNumber;
+    // BBAN (Basic Bank Account Number) format for Czech Republic
+    const bban = bankCode + prefix + accountNumber;
 
-  // Convert country code "CZ" to numeric format (C=3, Z=35) -> "32635"
-  const countryCode = "CZ";
-  const countryCodeNum = "3235";
+    // Convert country code "CZ" to numeric format (C=3, Z=35) -> "32635"
+    const countryCode = "CZ";
+    const countryCodeNum = "3235";
 
-  // Add "00" at the end (check digits, initially set to 00)
-  const numericRepresentation = bban + countryCodeNum + "00";
+    // Add "00" at the end (check digits, initially set to 00)
+    const numericRepresentation = bban + countryCodeNum + "00";
 
-  // Calculate modulo 97 according to ISO 7064
-  let checksum = 98 - (modulo97(numericRepresentation) % 97);
-  checksum = checksum.toString().padStart(2, "0");
+    // Calculate modulo 97 according to ISO 7064
+    let checksum = 98 - (modulo97(numericRepresentation) % 97);
+    checksum = checksum.toString().padStart(2, "0");
 
-  // Assemble the final IBAN
-  const iban = countryCode + checksum + bban;
+    // Assemble the final IBAN
+    const iban = countryCode + checksum + bban;
 
-  // Format IBAN with spaces for better readability
-  return formatIBAN(iban);
+    // Format IBAN with spaces for better readability
+    return formatIBAN(iban);
 }
 
 /**
@@ -98,14 +98,14 @@ function convertToIBAN(accountNumber, bankCode, prefix = "") {
  * @returns {number} - modulo 97 result
  */
 function modulo97(numStr) {
-  // For large numbers that could cause overflow, we use iterative calculation
-  let remainder = 0;
+    // For large numbers that could cause overflow, we use iterative calculation
+    let remainder = 0;
 
-  for (let i = 0; i < numStr.length; i++) {
-    remainder = (remainder * 10 + parseInt(numStr[i])) % 97;
-  }
+    for (let i = 0; i < numStr.length; i++) {
+        remainder = (remainder * 10 + parseInt(numStr[i])) % 97;
+    }
 
-  return remainder;
+    return remainder;
 }
 
 /**
@@ -114,7 +114,7 @@ function modulo97(numStr) {
  * @returns {string} - IBAN with spaces
  */
 function formatIBAN(iban) {
-  return iban.match(/.{1,4}/g).join(" ");
+    return iban.match(/.{1,4}/g).join(" ");
 }
 
 // Example usage with different parameter types
