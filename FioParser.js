@@ -11,22 +11,7 @@ function manualRun() {
     runUpdate();
 }
 
-// Function to get Fio token from secure storage
-function getFioToken() {
-    // Try to get token from Properties Service
-    const scriptProperties = PropertiesService.getScriptProperties();
-    const token = scriptProperties.getProperty('FIO_API_TOKEN');
-
-    if (!token) {
-        Logger.log('Fio API token not found in Properties Service');
-        return 'your_fio_token_here'; // Default fallback value
-    }
-
-    return token;
-}
-
-// Variable symbol key to filter transactions
-const VARIABLE_SYMBOL_KEY = '72405';
+const FIO_CONFIG = loadConfig([["FIO_API_TOKEN", "missing_fio_token"], ["VARIABLE_SYMBOL_KEY", '72405'], ["FIO_SYNC_SHEET", "FioSync"]]);
 
 /**
  * Get transactions since the last fetch from Fio Bank API
@@ -35,7 +20,7 @@ const VARIABLE_SYMBOL_KEY = '72405';
  */
 function getLastTransactions() {
     // Format the API URL for last transactions endpoint
-    const url = `https://fioapi.fio.cz/v1/rest/last/${getFioToken()}/transactions.json`;
+    const url = `https://fioapi.fio.cz/v1/rest/last/${FIO_CONFIG.FIO_API_TOKEN}/transactions.json`;
     Logger.log("URL: " + url)
 
     let response_value;
@@ -147,7 +132,7 @@ function processTransaction(transaction, sheet, variableSymbolKey) {
  * Include parsing of transaction notes
  * @param {string} sheetName - Name of the sheet tab
  */
-function writeTransactionsToSheet(sheetName) {
+function writeTransactionsToSheet() {
   // Get new transactions data
   const transactionsData = getLastTransactions();
 
@@ -165,6 +150,7 @@ function writeTransactionsToSheet(sheetName) {
   }
 
   // Open the specified Google Sheet
+  const sheetName = FIO_CONFIG.FIO_SYNC_SHEET;
   const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(sheetName);
   if (!sheet) {
     Logger.log(`Sheet "${sheetName}" not found in the spreadsheet`);
@@ -195,7 +181,7 @@ function writeTransactionsToSheet(sheetName) {
     newTransactionsCount++;
 
     // Use the named function to process the transaction
-    const wasProcessed = processTransaction(transaction, sheet, VARIABLE_SYMBOL_KEY);
+    const wasProcessed = processTransaction(transaction, sheet, FIO_CONFIG.VARIABLE_SYMBOL_KEY);
 
     if (wasProcessed) {
       filteredTransactionsCount++;
@@ -209,7 +195,7 @@ function writeTransactionsToSheet(sheetName) {
   }
 
   Logger.log(`Total new transactions: ${newTransactionsCount}`);
-  Logger.log(`Added ${filteredTransactionsCount} new transactions with variable symbol ${VARIABLE_SYMBOL_KEY}`);
+  Logger.log(`Added ${filteredTransactionsCount} new transactions with variable symbol ${FIO_CONFIG.VARIABLE_SYMBOL_KEY}`);
 }
 
 
@@ -236,7 +222,6 @@ function createFiveMinuteTrigger() {
  * Function that will be called by the trigger
  */
 function runUpdate() {
-    const SHEET_NAME = 'FioSync';
-    writeTransactionsToSheet(SHEET_NAME);
+    writeTransactionsToSheet();
 }
 

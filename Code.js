@@ -1,16 +1,11 @@
-
-/**
- * Change these to match the column names you are using for email
- * recipient addresses..
-*/
-const RECIPIENT_COL  = "Recipient";
+const MAIL_CONFIG = loadConfig([["RECIPIENT_COL", "Recipient"], ["EMAIL_PLAN_SHEET", "plan"], ["EMAIL_LOG_SHEET", "realizace"]])
 
 function myFunction() {
   Logger.log("Toto je výchozí funkce.");
   processEmails();
 }
- 
-/** 
+
+/**
  * Creates the menu item "Mail Merge" for user to run scripts on drop-down.
  */
 function onOpen() {
@@ -213,8 +208,8 @@ function consolidateQrCodeData(qrCodeObj, realizationData, realizationHeaders) {
 
 const SHEETS_DATA = (() => {
   const spreadsheet = SpreadsheetApp.getActiveSpreadsheet();
-  const planSheet = spreadsheet.getSheetByName("plan");
-  const realizationSheet = spreadsheet.getSheetByName("realizace");
+  const planSheet = spreadsheet.getSheetByName(MAIL_CONFIG.EMAIL_PLAN_SHEET);
+  const realizationSheet = spreadsheet.getSheetByName(MAIL_CONFIG.EMAIL_LOG_SHEET);
   const qrCodeSheet = spreadsheet.getSheetByName("QRCodes");
 
   const planData = planSheet ? planSheet.getDataRange().getValues() : [];
@@ -309,11 +304,11 @@ function processEmails() {
   const planData = parsePlanData();
   const realizationData = SHEETS_DATA.realization.slice(1); // Skip headers
   const realizationHeaders = SHEETS_DATA.realization[0]; // Get headers
-  const realizationSheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName("realizace");
+  const realizationSheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(MAIL_CONFIG.EMAIL_LOG_SHEET);
 
-  const recipientIdx = realizationHeaders.indexOf(RECIPIENT_COL);
+  const recipientIdx = realizationHeaders.indexOf(MAIL_CONFIG.RECIPIENT_COL);
   if (recipientIdx === -1) {
-    throw new Error(`Recipient column (${RECIPIENT_COL}) not found in realization data.`);
+    throw new Error(`Recipient column (${MAIL_CONFIG.RECIPIENT_COL}) not found in realization data.`);
   }
 
   realizationData.forEach((recipientRow, recipientIndex) => {

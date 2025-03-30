@@ -1,4 +1,48 @@
 /**
+ * Loads configuration values from PropertiesService with validation
+ * @param {Array<Array<string, any>>} propertyDefs - Array of tuples [propertyKey, defaultValue]
+ * @param {Object} [options] - Optional configuration
+ * @param {boolean} [options.throwOnMissing=false] - Whether to throw error when property is missing and has no default
+ * @returns {Object} Object with loaded properties
+ */
+function loadConfig(propertyDefs, options = {}) {
+    // Get script properties
+    const scriptProperties = PropertiesService.getScriptProperties();
+
+    // Set default options
+    const { throwOnMissing = false } = options;
+
+    // Initialize result object
+    const config = {};
+
+    // Iterate through each property definition
+    propertyDefs.forEach(([key, defaultValue]) => {
+        // Get property value
+        const value = scriptProperties.getProperty(key);
+
+        // Check if value exists
+        if (!value) {
+            // Check if default value is provided
+            if (defaultValue !== undefined) {
+                Logger.log(`Property ${key} not found, using default value`);
+                config[key] = defaultValue;
+            } else if (throwOnMissing) {
+                // Throw error if configured to do so
+                throw new Error(`Required property ${key} not found in Properties Service`);
+            } else {
+                Logger.log(`Property ${key} not found in Properties Service`);
+                config[key] = null;
+            }
+        } else {
+            config[key] = value;
+        }
+    });
+
+    return config;
+}
+
+
+/**
  * Converts Czech bank account number to IBAN format
  * @param {string|number} accountNumber - main account number
  * @param {string|number} bankCode - bank code
