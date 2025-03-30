@@ -13,8 +13,9 @@ This project allows sending emails based on rules defined within Google Sheets. 
 ## Setup
 
 1. Clone the repository.
-2. Set up your Google Apps Script environment.
-3. Configure your Fio Bank API token in the script properties.
+2. Use the Google Sheets template.
+3. Set up your Google Apps Script environment. 
+4. Set the `FIO_API_TOKEN` variable in Script Properties to the token value from the Fio API.  
 
 ## Usage
 
