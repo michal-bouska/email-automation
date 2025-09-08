@@ -174,38 +174,94 @@ function generatePaymentQrData(accountNumber, bankCode, currency, amount, variab
 /**
  * Consolidates data for QR code generation.
  * @param {object} qrCodeObj The QR code object with all necessary fields.
- * @param {Array} realizationData The realization data (rows from the sheet).
+ * @param {Array} recipientRow The current recipient's row data from the realization sheet.
  * @param {Array} realizationHeaders The headers for the realization data.
- * @return {object} Consolidated QR code data with resolved variable symbol.
+ * @return {object} Consolidated QR code data with resolved variable symbol, amount, and message.
  */
-function consolidateQrCodeData(qrCodeObj, realizationData, realizationHeaders) {
+function consolidateQrCodeData(qrCodeObj, recipientRow, realizationHeaders) {
     if (!qrCodeObj) {
         throw new Error("QR code object is required.");
     }
 
+    // Validate that only one of each pair should be non-empty
     if (qrCodeObj.variableSymbol && qrCodeObj.variableSymbolColumn) {
         throw new Error("Only one of variableSymbol or variableSymbolColumn should be non-empty.");
     }
 
-    let resolvedVariableSymbol = qrCodeObj.variableSymbol;
+    if (qrCodeObj.amount && qrCodeObj.amountColumn) {
+        throw new Error("Only one of amount or amountColumn should be non-empty.");
+    }
 
+    if (qrCodeObj.message && qrCodeObj.messageColumn) {
+        throw new Error("Only one of message or messageColumn should be non-empty.");
+    }
+
+    // Resolve variable symbol
+    let resolvedVariableSymbol = qrCodeObj.variableSymbol;
     if (!resolvedVariableSymbol && qrCodeObj.variableSymbolColumn) {
         const columnIdx = realizationHeaders.indexOf(qrCodeObj.variableSymbolColumn);
         if (columnIdx === -1) {
             throw new Error(`Column ${qrCodeObj.variableSymbolColumn} not found in realization data headers.`);
         }
 
-        // Assuming the first row of realizationData is the one to use for variable symbol
-        resolvedVariableSymbol = realizationData[0][columnIdx];
+        resolvedVariableSymbol = recipientRow[columnIdx];
 
         if (resolvedVariableSymbol == null) {
             throw new Error(`No value found in realization data for column ${qrCodeObj.variableSymbolColumn}.`);
         }
     }
 
+    // Resolve amount
+    let resolvedAmount = qrCodeObj.amount;
+    if (!resolvedAmount && qrCodeObj.amountColumn) {
+        const columnIdx = realizationHeaders.indexOf(qrCodeObj.amountColumn);
+        if (columnIdx === -1) {
+            throw new Error(`Column ${qrCodeObj.amountColumn} not found in realization data headers.`);
+        }
+
+        resolvedAmount = recipientRow[columnIdx];
+
+        if (resolvedAmount == null) {
+            throw new Error(`No value found in realization data for column ${qrCodeObj.amountColumn}.`);
+        }
+    }
+
+    // Convert amount to number and validate
+    if (resolvedAmount != null) {
+        if (typeof resolvedAmount === 'string') {
+            resolvedAmount = parseFloat(resolvedAmount);
+            if (isNaN(resolvedAmount)) {
+                const sourceInfo = qrCodeObj.amountColumn ? `column ${qrCodeObj.amountColumn}` : 'amount field';
+                throw new Error(`Invalid amount value in ${sourceInfo} for QR code '${qrCodeObj.imageName}': ${qrCodeObj.amountColumn ? recipientRow[realizationHeaders.indexOf(qrCodeObj.amountColumn)] : qrCodeObj.amount}`);
+            }
+        } else if (typeof resolvedAmount !== 'number') {
+            const sourceInfo = qrCodeObj.amountColumn ? `column ${qrCodeObj.amountColumn}` : 'amount field';
+            throw new Error(`Amount must be a number in ${sourceInfo} for QR code '${qrCodeObj.imageName}': ${resolvedAmount}`);
+        }
+    } else {
+        throw new Error(`Amount is required for QR code '${qrCodeObj.imageName}' - provide either 'amount' or 'amountColumn'.`);
+    }
+
+    // Resolve message
+    let resolvedMessage = qrCodeObj.message;
+    if (!resolvedMessage && qrCodeObj.messageColumn) {
+        const columnIdx = realizationHeaders.indexOf(qrCodeObj.messageColumn);
+        if (columnIdx === -1) {
+            throw new Error(`Column ${qrCodeObj.messageColumn} not found in realization data headers.`);
+        }
+
+        resolvedMessage = recipientRow[columnIdx];
+
+        if (resolvedMessage == null) {
+            throw new Error(`No value found in realization data for column ${qrCodeObj.messageColumn}.`);
+        }
+    }
+
     return {
         ...qrCodeObj,
-        variableSymbol: resolvedVariableSymbol
+        variableSymbol: resolvedVariableSymbol,
+        amount: resolvedAmount,
+        message: resolvedMessage
     };
 }
 
@@ -230,9 +286,11 @@ const SHEETS_DATA = (() => {
             bankCode: row[qrCodeHeaders.indexOf("BankCode")],
             currency: row[qrCodeHeaders.indexOf("Currency")],
             amount: row[qrCodeHeaders.indexOf("Amount")],
+            amountColumn: row[qrCodeHeaders.indexOf("AmountColumn")],
             variableSymbol: row[qrCodeHeaders.indexOf("VariableSymbol")],
             variableSymbolColumn: row[qrCodeHeaders.indexOf("VariableSymbolColumn")],
             message: row[qrCodeHeaders.indexOf("Message")],
+            messageColumn: row[qrCodeHeaders.indexOf("MessageColumn")],
             size: row[qrCodeHeaders.indexOf("Size")]
         };
 
@@ -378,7 +436,7 @@ function processEmails() {
                     // Include QR code mappings
                     if (SHEETS_DATA.qrCodes[plan.emailTopic]) {
                         SHEETS_DATA.qrCodes[plan.emailTopic].forEach(qrCodeObj => {
-                            consolidatedQrCode = consolidateQrCodeData(qrCodeObj, realizationData, realizationHeaders);
+                            consolidatedQrCode = consolidateQrCodeData(qrCodeObj, recipientRow, realizationHeaders);
                             dataMapping[`${qrCodeObj.imageName}`] = `<img src="cid:${qrCodeObj.imageName}" alt="QR Code">`;
                         });
                     }
@@ -414,7 +472,7 @@ function processEmails() {
                     // Add QR codes and replace placeholders in email content
                     if (SHEETS_DATA.qrCodes[plan.emailTopic]) {
                         SHEETS_DATA.qrCodes[plan.emailTopic].forEach(qrCodeObj => {
-                            consolidatedQrCode = consolidateQrCodeData(qrCodeObj, realizationData, realizationHeaders);
+                            consolidatedQrCode = consolidateQrCodeData(qrCodeObj, recipientRow, realizationHeaders);
                             msgObj.html = insertQrCodesIntoEmail(msgObj.html, inlineImages, consolidatedQrCode);
                         });
                     }
