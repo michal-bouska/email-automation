@@ -1,4 +1,4 @@
-const MAIL_CONFIG = loadConfig([["RECIPIENT_COL", "Recipient"], ["EMAIL_PLAN_SHEET", "plan"], ["EMAIL_LOG_SHEET", "realizace"]], ["SENDER_EMAIL", Session.getActiveUser().getEmail()], ["CC_EMAIL", Session.getActiveUser().getEmail()]);
+const MAIL_CONFIG = loadConfig([["RECIPIENT_COL", "Recipient"], ["EMAIL_PLAN_SHEET", "plan"], ["EMAIL_LOG_SHEET", "realizace"], ["SENDER_EMAIL", Session.getActiveUser().getEmail()], ["CC_EMAIL", ""], ["SENDER_NAME", null]]);
 
 function myFunction() {
     Logger.log("Toto je výchozí funkce.");
@@ -489,6 +489,7 @@ function processEmails() {
                     GmailApp.sendEmail(recipient, msgObj.subject, msgObj.text, {
                         from: MAIL_CONFIG.SENDER_EMAIL,
                         cc: MAIL_CONFIG.CC_EMAIL,
+                        name: MAIL_CONFIG.SENDER_NAME,
                         htmlBody: msgObj.html,
                         attachments: attachments,
                         inlineImages: inlineImages
