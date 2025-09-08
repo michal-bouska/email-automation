@@ -1,4 +1,4 @@
-const MAIL_CONFIG = loadConfig([["RECIPIENT_COL", "Recipient"], ["EMAIL_PLAN_SHEET", "plan"], ["EMAIL_LOG_SHEET", "realizace"], ["SENDER_EMAIL", Session.getActiveUser().getEmail()], ["CC_EMAIL", ""], ["SENDER_NAME", null]]);
+const MAIL_CONFIG = loadConfig([["RECIPIENT_COL", "Recipient"], ["EMAIL_PLAN_SHEET", "plan"], ["EMAIL_LOG_SHEET", "realizace"], ["SENDER_EMAIL", null], ["CC_EMAIL", ""], ["SENDER_NAME", null]]);
 
 function myFunction() {
     Logger.log("Toto je výchozí funkce.");
