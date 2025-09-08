@@ -114,7 +114,7 @@ function modulo97(numStr) {
  * @returns {string} - IBAN with spaces
  */
 function formatIBAN(iban) {
-    return iban.match(/.{1,4}/g).join(" ");
+    return iban;
 }
 
 // Example usage with different parameter types
