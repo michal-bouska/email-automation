@@ -271,11 +271,9 @@ function consolidateQrCodeData(qrCodeObj, recipientRow, realizationHeaders) {
 const SHEETS_DATA = (() => {
     const spreadsheet = SpreadsheetApp.getActiveSpreadsheet();
     const planSheet = spreadsheet.getSheetByName(MAIL_CONFIG.EMAIL_PLAN_SHEET);
-    const realizationSheet = spreadsheet.getSheetByName(MAIL_CONFIG.EMAIL_LOG_SHEET);
     const qrCodeSheet = spreadsheet.getSheetByName("QRCodes");
 
     const planData = planSheet ? planSheet.getDataRange().getValues() : [];
-    const realizationData = realizationSheet ? realizationSheet.getDataRange().getValues() : [];
     const qrCodeData = qrCodeSheet ? qrCodeSheet.getDataRange().getValues() : [];
 
     // Parse QR Code data into objects mapped by Email Topic and global QR codes
@@ -322,7 +320,6 @@ const SHEETS_DATA = (() => {
 
     return {
         plan: planData,
-        realization: realizationData,
         qrCodes: qrCodeObjects
     };
 })();
@@ -387,10 +384,14 @@ function insertQrCodesIntoEmail(htmlBody, inlineImages, qrCodeObj) {
 }
 
 function processEmails() {
-    const planData = parsePlanData();
-    const realizationData = SHEETS_DATA.realization.slice(1); // Skip headers
-    const realizationHeaders = SHEETS_DATA.realization[0]; // Get headers
-    const realizationSheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(MAIL_CONFIG.EMAIL_LOG_SHEET);
+    processEmailsWithParams(parsePlanData(), SHEETS_DATA, MAIL_CONFIG.EMAIL_LOG_SHEET);
+}
+
+function processEmailsWithParams(planData, sheetsData, realizationSheetName ) {
+    // Get realization data from the specified sheet
+    const realizationSheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(realizationSheetName);
+    const realizationData = realizationSheet ? realizationSheet.getDataRange().getValues().slice(1) : []; // Skip headers
+    const realizationHeaders = realizationSheet ? realizationSheet.getDataRange().getValues()[0] : []; // Get headers
 
     const recipientIdx = realizationHeaders.indexOf(MAIL_CONFIG.RECIPIENT_COL);
     if (recipientIdx === -1) {
@@ -458,16 +459,16 @@ function processEmails() {
                 Logger.log("Start preparing qr code data mapping.")
                 try {
                     // Include QR code mappings for specific email topic
-                    if (SHEETS_DATA.qrCodes[plan.emailTopic]) {
-                        SHEETS_DATA.qrCodes[plan.emailTopic].forEach(qrCodeObj => {
+                    if (sheetsData.qrCodes[plan.emailTopic]) {
+                        sheetsData.qrCodes[plan.emailTopic].forEach(qrCodeObj => {
                             consolidatedQrCode = consolidateQrCodeData(qrCodeObj, recipientRow, realizationHeaders);
                             dataMapping[`${qrCodeObj.imageName}`] = `<img src="cid:${qrCodeObj.imageName}" alt="QR Code">`;
                         });
                     }
 
                     // Include global QR codes (available for all email topics)
-                    if (SHEETS_DATA.qrCodes["GLOBAL"]) {
-                        SHEETS_DATA.qrCodes["GLOBAL"].forEach(qrCodeObj => {
+                    if (sheetsData.qrCodes["GLOBAL"]) {
+                        sheetsData.qrCodes["GLOBAL"].forEach(qrCodeObj => {
                             consolidatedQrCode = consolidateQrCodeData(qrCodeObj, recipientRow, realizationHeaders);
                             dataMapping[`${qrCodeObj.imageName}`] = `<img src="cid:${qrCodeObj.imageName}" alt="QR Code">`;
                         });
@@ -502,8 +503,8 @@ function processEmails() {
                     inlineImages = emailTemplate.inlineImages || {};
 
                     // Add QR codes and replace placeholders in email content for specific email topic
-                    if (SHEETS_DATA.qrCodes[plan.emailTopic]) {
-                        SHEETS_DATA.qrCodes[plan.emailTopic].forEach(qrCodeObj => {
+                    if (sheetsData.qrCodes[plan.emailTopic]) {
+                        sheetsData.qrCodes[plan.emailTopic].forEach(qrCodeObj => {
                             // Only generate and insert QR codes that are actually needed in the email
                             if (emailTemplate.message.html.includes(`{{${qrCodeObj.imageName}}}`)) {
                                 consolidatedQrCode = consolidateQrCodeData(qrCodeObj, recipientRow, realizationHeaders);
@@ -513,8 +514,8 @@ function processEmails() {
                     }
 
                     // Add global QR codes and replace placeholders in email content
-                    if (SHEETS_DATA.qrCodes["GLOBAL"]) {
-                        SHEETS_DATA.qrCodes["GLOBAL"].forEach(qrCodeObj => {
+                    if (sheetsData.qrCodes["GLOBAL"]) {
+                        sheetsData.qrCodes["GLOBAL"].forEach(qrCodeObj => {
                             // Only generate and insert global QR codes that are actually needed in the email
                             if (emailTemplate.message.html.includes(`{{${qrCodeObj.imageName}}}`)) {
                                 consolidatedQrCode = consolidateQrCodeData(qrCodeObj, recipientRow, realizationHeaders);
