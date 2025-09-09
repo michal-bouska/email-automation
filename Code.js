@@ -93,7 +93,9 @@ function getGmailTemplateFromDrafts_(subject_line) {
             attachments: attachments, inlineImages: inlineImagesObj
         };
     } catch (e) {
-        throw new Error("Oops - can't find Gmail draft");
+        Logger.error(`Error finding Gmail draft for subject '${subject_line}':`, e.message);
+        Logger.error('Stacktrace:', e.stack);
+        throw new Error(`Oops - can't find Gmail draft for subject '${subject_line}': ${e.message}`);
     }
 
     /**
@@ -117,7 +119,7 @@ function getGmailTemplateFromDrafts_(subject_line) {
  */
 function generateQrCodeBlob(qrCodeObj) {
     if (!qrCodeObj) {
-        console.error("QR code data object is missing.");
+        Logger.error("QR code data object is missing.");
         return null;
     }
 
@@ -137,11 +139,11 @@ function generateQrCodeBlob(qrCodeObj) {
         if (response.getResponseCode() === 200) {
             return response.getBlob();
         } else {
-            console.error(`Failed to fetch QR code. HTTP response code ${response.getResponseCode()}.`);
+            Logger.error(`Failed to fetch QR code. HTTP response code ${response.getResponseCode()}.`);
             return null;
         }
     } catch (e) {
-        console.error(`Error generating QR code: ${e.message}`);
+        Logger.error(`Error generating QR code: ${e.message}`);
         return null;
     }
 }
@@ -387,13 +389,13 @@ function processEmails() {
             const conditionValue = recipientRow[conditionColIdx];
             const sentValue = recipientRow[sentColIdx];
 
-            console.log(
+            Logger.log(
                 `Parsed recipient row ${recipientIndex + 2}: ` +
                 `Recipient = ${recipient}, Condition Value = ${conditionValue}, Sent Value = ${sentValue}`
             );
 
             if ((conditionValue === 1 && sentValue === "") || (conditionValue === 2)) {
-                console.log(
+                Logger.log(
                     `Preparing to send email for topic: ${plan.emailTopic} to recipient: ${recipient} at row ${recipientIndex + 2}.`
                 );
 
@@ -409,9 +411,9 @@ function processEmails() {
                 try {
                     emailTemplate = getGmailTemplateFromDrafts_(plan.emailTopic);
                 } catch (error) {
-                    console.error(`Failed get template from drafts ${recipient}: ${error.message}`);
+                    Logger.error(`Failed get template from drafts ${recipient}: ${error.message}`);
                     sentStatus = `${error.message} at ${Date()}`; // Formátování zprávy
-                    console.log("Stacktrace:", error.stack);
+                    Logger.log("Stacktrace:", error.stack);
                     realizationSheet.getRange(recipientIndex + 2, sentColIdx + 1).setValue(sentStatus);
                     return null
                 }
@@ -424,9 +426,9 @@ function processEmails() {
                         return map;
                     }, {});
                 } catch (error) {
-                    console.error(`Failed to parse realisation ${recipient}: ${error.message}`);
+                    Logger.error(`Failed to parse realisation ${recipient}: ${error.message}`);
                     sentStatus = `${error.message} at ${new Date().toISOString()}`; // Formátování zprávy
-                    console.log("Stacktrace:", error.stack);
+                    Logger.log("Stacktrace:", error.stack);
                     realizationSheet.getRange(recipientIndex + 2, sentColIdx + 1).setValue(sentStatus);
                     return null
                 }
@@ -441,9 +443,9 @@ function processEmails() {
                         });
                     }
                 } catch (error) {
-                    console.error(`Failed to generate qr code ${recipient}: ${error.message}`);
+                    Logger.error(`Failed to generate qr code ${recipient}: ${error.message}`);
                     sentStatus = `${error.message} at ${new Date().toISOString()}`; // Formátování zprávy
-                    console.log("Stacktrace:", error.stack);
+                    Logger.log("Stacktrace:", error.stack);
                     realizationSheet.getRange(recipientIndex + 2, sentColIdx + 1).setValue(sentStatus);
                     return null
                 }
@@ -457,9 +459,9 @@ function processEmails() {
                         sentValue
                     });
                 } catch (error) {
-                    console.error(`Failed to fill template ${recipient}: ${error.message}`);
+                    Logger.error(`Failed to fill template ${recipient}: ${error.message}`);
                     sentStatus = `${error.message} at ${new Date().toISOString()}`; // Formátování zprávy
-                    console.log("Stacktrace:", error.stack);
+                    Logger.log("Stacktrace:", error.stack);
                     realizationSheet.getRange(recipientIndex + 2, sentColIdx + 1).setValue(sentStatus);
                     return null
                 }
@@ -477,9 +479,9 @@ function processEmails() {
                         });
                     }
                 } catch (error) {
-                    console.error(`Failed to inline images ${recipient}: ${error.message}`);
+                    Logger.error(`Failed to inline images ${recipient}: ${error.message}`);
                     sentStatus = `${error.message} at ${new Date().toISOString()}`; // Formátování zprávy
-                    console.log("Stacktrace:", error.stack);
+                    Logger.log("Stacktrace:", error.stack);
                     realizationSheet.getRange(recipientIndex + 2, sentColIdx + 1).setValue(sentStatus);
                     return null
                 }
@@ -497,9 +499,9 @@ function processEmails() {
 
                     sentStatus = new Date().toISOString(); // Store current date and time
                 } catch (error) {
-                    console.error(`Failed to send prepared email ${recipient}: ${error.message}`);
+                    Logger.error(`Failed to send prepared email ${recipient}: ${error.message}`);
                     sentStatus = `${error.message} at ${new Date().toISOString()}`; // Formátování zprávy
-                    console.log("Stacktrace:", error.stack);
+                    Logger.log("Stacktrace:", error.stack);
                     realizationSheet.getRange(recipientIndex + 2, sentColIdx + 1).setValue(sentStatus);
                     return null
                 }
