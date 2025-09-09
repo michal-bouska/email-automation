@@ -329,7 +329,8 @@ const SHEETS_DATA = (() => {
 
 /**
  * Transforms plan data into objects with validation.
- * Assumes the first row contains headers "Email Topic", "Column Condition To Send", and "Column Sent".
+ * Assumes the first row contains headers "Email Topic", "Column Condition To Send", "Column Sent",
+ * and optionally "Sender Email", "CC", "BCC", "Sender Name".
  * Checks that "Column Condition To Send" and "Column Sent" contain valid column names ([a-z]+).
  * @returns {Array<Object>} Array of parsed objects.
  */
@@ -344,6 +345,12 @@ function parsePlanData() {
     const conditionColumnIdx = headers.indexOf("Column Condition To Send");
     const sentDateColumnIdx = headers.indexOf("Column Sent");
 
+    // Optional email configuration columns
+    const senderEmailIdx = headers.indexOf("Sender Email");
+    const ccIdx = headers.indexOf("CC");
+    const bccIdx = headers.indexOf("BCC");
+    const senderNameIdx = headers.indexOf("Sender Name");
+
     if (emailTopicIdx === -1 || conditionColumnIdx === -1 || sentDateColumnIdx === -1) {
         throw new Error("Required headers are missing in the plan data.");
     }
@@ -352,7 +359,12 @@ function parsePlanData() {
         return {
             emailTopic: row[emailTopicIdx],
             conditionColumn: row[conditionColumnIdx],
-            sentColumn: row[sentDateColumnIdx]
+            sentColumn: row[sentDateColumnIdx],
+            // Email configuration with fallback to MAIL_CONFIG defaults
+            senderEmail: senderEmailIdx !== -1 && row[senderEmailIdx] ? row[senderEmailIdx] : MAIL_CONFIG.SENDER_EMAIL,
+            cc: ccIdx !== -1 && row[ccIdx] ? row[ccIdx] : MAIL_CONFIG.CC_EMAIL,
+            bcc: bccIdx !== -1 && row[bccIdx] ? row[bccIdx] : null,
+            senderName: senderNameIdx !== -1 && row[senderNameIdx] ? row[senderNameIdx] : MAIL_CONFIG.SENDER_NAME
         };
     });
 }
@@ -422,7 +434,7 @@ function processEmails() {
                     emailTemplate = getGmailTemplateFromDrafts_(plan.emailTopic);
                 } catch (error) {
                     Logger.error(`Failed get template from drafts ${recipient}: ${error.message}`);
-                    sentStatus = `${error.message} at ${Date()}`; 
+                    sentStatus = `${error.message} at ${Date()}`;
                     Logger.log("Stacktrace:", error.stack);
                     realizationSheet.getRange(recipientIndex + 2, sentColIdx + 1).setValue(sentStatus);
                     return null
@@ -437,7 +449,7 @@ function processEmails() {
                     }, {});
                 } catch (error) {
                     Logger.error(`Failed to parse realisation ${recipient}: ${error.message}`);
-                    sentStatus = `${error.message} at ${new Date().toISOString()}`; 
+                    sentStatus = `${error.message} at ${new Date().toISOString()}`;
                     Logger.log("Stacktrace:", error.stack);
                     realizationSheet.getRange(recipientIndex + 2, sentColIdx + 1).setValue(sentStatus);
                     return null
@@ -478,7 +490,7 @@ function processEmails() {
                     });
                 } catch (error) {
                     Logger.error(`Failed to fill template ${recipient}: ${error.message}`);
-                    sentStatus = `${error.message} at ${new Date().toISOString()}`; 
+                    sentStatus = `${error.message} at ${new Date().toISOString()}`;
                     Logger.log("Stacktrace:", error.stack);
                     realizationSheet.getRange(recipientIndex + 2, sentColIdx + 1).setValue(sentStatus);
                     return null
@@ -520,19 +532,22 @@ function processEmails() {
 
                 Logger.log("Start sending email.")
                 try {
-                    GmailApp.sendEmail(recipient, msgObj.subject, msgObj.text, {
-                        from: MAIL_CONFIG.SENDER_EMAIL,
-                        cc: MAIL_CONFIG.CC_EMAIL,
-                        name: MAIL_CONFIG.SENDER_NAME,
+                    const emailOptions = {
+                        from: plan.senderEmail,
+                        cc:  plan.cc,
+                        bcc: plan.bcc,
+                        name: plan.senderName,
                         htmlBody: msgObj.html,
                         attachments: attachments,
                         inlineImages: inlineImages
-                    });
+                    };
+
+                    GmailApp.sendEmail(recipient, msgObj.subject, msgObj.text, emailOptions);
 
                     sentStatus = new Date().toISOString();
                 } catch (error) {
                     Logger.error(`Failed to send prepared email ${recipient}: ${error.message}`);
-                    sentStatus = `${error.message} at ${new Date().toISOString()}`; 
+                    sentStatus = `${error.message} at ${new Date().toISOString()}`;
                     Logger.log("Stacktrace:", error.stack);
                     realizationSheet.getRange(recipientIndex + 2, sentColIdx + 1).setValue(sentStatus);
                     return null
