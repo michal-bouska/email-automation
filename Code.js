@@ -422,7 +422,7 @@ function processEmails() {
                     emailTemplate = getGmailTemplateFromDrafts_(plan.emailTopic);
                 } catch (error) {
                     Logger.error(`Failed get template from drafts ${recipient}: ${error.message}`);
-                    sentStatus = `${error.message} at ${Date()}`; // Formátování zprávy
+                    sentStatus = `${error.message} at ${Date()}`; 
                     Logger.log("Stacktrace:", error.stack);
                     realizationSheet.getRange(recipientIndex + 2, sentColIdx + 1).setValue(sentStatus);
                     return null
@@ -437,7 +437,7 @@ function processEmails() {
                     }, {});
                 } catch (error) {
                     Logger.error(`Failed to parse realisation ${recipient}: ${error.message}`);
-                    sentStatus = `${error.message} at ${new Date().toISOString()}`; // Formátování zprávy
+                    sentStatus = `${error.message} at ${new Date().toISOString()}`; 
                     Logger.log("Stacktrace:", error.stack);
                     realizationSheet.getRange(recipientIndex + 2, sentColIdx + 1).setValue(sentStatus);
                     return null
@@ -478,7 +478,7 @@ function processEmails() {
                     });
                 } catch (error) {
                     Logger.error(`Failed to fill template ${recipient}: ${error.message}`);
-                    sentStatus = `${error.message} at ${new Date().toISOString()}`; // Formátování zprávy
+                    sentStatus = `${error.message} at ${new Date().toISOString()}`; 
                     Logger.log("Stacktrace:", error.stack);
                     realizationSheet.getRange(recipientIndex + 2, sentColIdx + 1).setValue(sentStatus);
                     return null
@@ -529,10 +529,10 @@ function processEmails() {
                         inlineImages: inlineImages
                     });
 
-                    sentStatus = new Date().toISOString(); // Store current date and time
+                    sentStatus = new Date().toISOString();
                 } catch (error) {
                     Logger.error(`Failed to send prepared email ${recipient}: ${error.message}`);
-                    sentStatus = `${error.message} at ${new Date().toISOString()}`; // Formátování zprávy
+                    sentStatus = `${error.message} at ${new Date().toISOString()}`; 
                     Logger.log("Stacktrace:", error.stack);
                     realizationSheet.getRange(recipientIndex + 2, sentColIdx + 1).setValue(sentStatus);
                     return null
@@ -541,10 +541,8 @@ function processEmails() {
                 // Update the "realizace" sheet with the status
                 const range = realizationSheet.getRange(recipientIndex + 2, sentColIdx + 1);
 
-                // Nastavení hodnoty buňky
                 range.setValue(sentStatus);
 
-                // Nastavení formátu na datum a čas (např. "dd.MM.yyyy HH:mm:ss")
                 range.setNumberFormat("dd.MM.yyyy HH:mm:ss");
             }
         });
