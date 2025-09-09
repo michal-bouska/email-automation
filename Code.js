@@ -278,7 +278,7 @@ const SHEETS_DATA = (() => {
     const realizationData = realizationSheet ? realizationSheet.getDataRange().getValues() : [];
     const qrCodeData = qrCodeSheet ? qrCodeSheet.getDataRange().getValues() : [];
 
-    // Parse QR Code data into objects mapped by Email Topic
+    // Parse QR Code data into objects mapped by Email Topic and global QR codes
     const qrCodeHeaders = qrCodeData[0];
     const qrCodeObjects = qrCodeData.slice(1).reduce((map, row) => {
         const qrCodeObj = {
@@ -296,11 +296,23 @@ const SHEETS_DATA = (() => {
             size: row[qrCodeHeaders.indexOf("Size")]
         };
 
+        // Skip rows without imageName
+        if (!qrCodeObj.imageName) {
+            return map;
+        }
+
         if (qrCodeObj.emailTopic) {
+            // QR code for specific email topic
             if (!map[qrCodeObj.emailTopic]) {
                 map[qrCodeObj.emailTopic] = [];
             }
             map[qrCodeObj.emailTopic].push(qrCodeObj);
+        } else {
+            // Global QR code (empty EmailTopic) - add to special "GLOBAL" key
+            if (!map["GLOBAL"]) {
+                map["GLOBAL"] = [];
+            }
+            map["GLOBAL"].push(qrCodeObj);
         }
 
         return map;
@@ -335,8 +347,6 @@ function parsePlanData() {
     if (emailTopicIdx === -1 || conditionColumnIdx === -1 || sentDateColumnIdx === -1) {
         throw new Error("Required headers are missing in the plan data.");
     }
-
-    const isValidColumnName = name => /^[A-Z]+$/.test(name);
 
     return planData.slice(1).map(row => {
         return {
@@ -435,16 +445,24 @@ function processEmails() {
 
                 Logger.log("Start preparing qr code data mapping.")
                 try {
-                    // Include QR code mappings
+                    // Include QR code mappings for specific email topic
                     if (SHEETS_DATA.qrCodes[plan.emailTopic]) {
                         SHEETS_DATA.qrCodes[plan.emailTopic].forEach(qrCodeObj => {
                             consolidatedQrCode = consolidateQrCodeData(qrCodeObj, recipientRow, realizationHeaders);
                             dataMapping[`${qrCodeObj.imageName}`] = `<img src="cid:${qrCodeObj.imageName}" alt="QR Code">`;
                         });
                     }
+
+                    // Include global QR codes (available for all email topics)
+                    if (SHEETS_DATA.qrCodes["GLOBAL"]) {
+                        SHEETS_DATA.qrCodes["GLOBAL"].forEach(qrCodeObj => {
+                            consolidatedQrCode = consolidateQrCodeData(qrCodeObj, recipientRow, realizationHeaders);
+                            dataMapping[`${qrCodeObj.imageName}`] = `<img src="cid:${qrCodeObj.imageName}" alt="QR Code">`;
+                        });
+                    }
                 } catch (error) {
                     Logger.error(`Failed to generate qr code ${recipient}: ${error.message}`);
-                    sentStatus = `${error.message} at ${new Date().toISOString()}`; // Formátování zprávy
+                    sentStatus = `${error.message} at ${new Date().toISOString()}`;
                     Logger.log("Stacktrace:", error.stack);
                     realizationSheet.getRange(recipientIndex + 2, sentColIdx + 1).setValue(sentStatus);
                     return null
@@ -471,16 +489,30 @@ function processEmails() {
                     attachments = emailTemplate.attachments || [];
                     inlineImages = emailTemplate.inlineImages || {};
 
-                    // Add QR codes and replace placeholders in email content
+                    // Add QR codes and replace placeholders in email content for specific email topic
                     if (SHEETS_DATA.qrCodes[plan.emailTopic]) {
                         SHEETS_DATA.qrCodes[plan.emailTopic].forEach(qrCodeObj => {
-                            consolidatedQrCode = consolidateQrCodeData(qrCodeObj, recipientRow, realizationHeaders);
-                            msgObj.html = insertQrCodesIntoEmail(msgObj.html, inlineImages, consolidatedQrCode);
+                            // Only generate and insert QR codes that are actually needed in the email
+                            if (emailTemplate.message.html.includes(`{{${qrCodeObj.imageName}}}`)) {
+                                consolidatedQrCode = consolidateQrCodeData(qrCodeObj, recipientRow, realizationHeaders);
+                                msgObj.html = insertQrCodesIntoEmail(msgObj.html, inlineImages, consolidatedQrCode);
+                            }
+                        });
+                    }
+
+                    // Add global QR codes and replace placeholders in email content
+                    if (SHEETS_DATA.qrCodes["GLOBAL"]) {
+                        SHEETS_DATA.qrCodes["GLOBAL"].forEach(qrCodeObj => {
+                            // Only generate and insert global QR codes that are actually needed in the email
+                            if (emailTemplate.message.html.includes(`{{${qrCodeObj.imageName}}}`)) {
+                                consolidatedQrCode = consolidateQrCodeData(qrCodeObj, recipientRow, realizationHeaders);
+                                msgObj.html = insertQrCodesIntoEmail(msgObj.html, inlineImages, consolidatedQrCode);
+                            }
                         });
                     }
                 } catch (error) {
                     Logger.error(`Failed to inline images ${recipient}: ${error.message}`);
-                    sentStatus = `${error.message} at ${new Date().toISOString()}`; // Formátování zprávy
+                    sentStatus = `${error.message} at ${new Date().toISOString()}`;
                     Logger.log("Stacktrace:", error.stack);
                     realizationSheet.getRange(recipientIndex + 2, sentColIdx + 1).setValue(sentStatus);
                     return null
