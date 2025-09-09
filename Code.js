@@ -325,11 +325,11 @@ const SHEETS_DATA = (() => {
 })();
 
 /**
- * Transforms plan data into objects with validation.
+ * Transforms plan data into objects with validation and groups them by realization sheet.
  * Assumes the first row contains headers "Email Topic", "Column Condition To Send", "Column Sent",
- * and optionally "Sender Email", "CC", "BCC", "Sender Name".
+ * and optionally "Sender Email", "CC", "BCC", "Sender Name", "Realization Sheet".
  * Checks that "Column Condition To Send" and "Column Sent" contain valid column names ([a-z]+).
- * @returns {Array<Object>} Array of parsed objects.
+ * @returns {Object} Object with realization sheet names as keys and arrays of plan objects as values.
  */
 function parsePlanData() {
     const planData = SHEETS_DATA.plan;
@@ -347,12 +347,13 @@ function parsePlanData() {
     const ccIdx = headers.indexOf("CC");
     const bccIdx = headers.indexOf("BCC");
     const senderNameIdx = headers.indexOf("Sender Name");
+    const realizationSheetIdx = headers.indexOf("Realization Sheet");
 
     if (emailTopicIdx === -1 || conditionColumnIdx === -1 || sentDateColumnIdx === -1) {
         throw new Error("Required headers are missing in the plan data.");
     }
 
-    return planData.slice(1).map(row => {
+    const plans = planData.slice(1).map(row => {
         return {
             emailTopic: row[emailTopicIdx],
             conditionColumn: row[conditionColumnIdx],
@@ -361,9 +362,23 @@ function parsePlanData() {
             senderEmail: senderEmailIdx !== -1 && row[senderEmailIdx] ? row[senderEmailIdx] : MAIL_CONFIG.SENDER_EMAIL,
             cc: ccIdx !== -1 && row[ccIdx] ? row[ccIdx] : MAIL_CONFIG.CC_EMAIL,
             bcc: bccIdx !== -1 && row[bccIdx] ? row[bccIdx] : null,
-            senderName: senderNameIdx !== -1 && row[senderNameIdx] ? row[senderNameIdx] : MAIL_CONFIG.SENDER_NAME
+            senderName: senderNameIdx !== -1 && row[senderNameIdx] ? row[senderNameIdx] : MAIL_CONFIG.SENDER_NAME,
+            // Realization sheet with fallback to MAIL_CONFIG default
+            realizationSheet: realizationSheetIdx !== -1 && row[realizationSheetIdx] ? row[realizationSheetIdx] : MAIL_CONFIG.EMAIL_LOG_SHEET
         };
     });
+
+    // Group plans by realization sheet
+    const groupedPlans = plans.reduce((groups, plan) => {
+        const sheetName = plan.realizationSheet;
+        if (!groups[sheetName]) {
+            groups[sheetName] = [];
+        }
+        groups[sheetName].push(plan);
+        return groups;
+    }, {});
+
+    return groupedPlans;
 }
 
 /**
@@ -384,10 +399,18 @@ function insertQrCodesIntoEmail(htmlBody, inlineImages, qrCodeObj) {
 }
 
 function processEmails() {
-    processEmailsWithParams(parsePlanData(), SHEETS_DATA, MAIL_CONFIG.EMAIL_LOG_SHEET);
+    const groupedPlans = parsePlanData();
+
+    // Process each realization sheet separately
+    Object.keys(groupedPlans).forEach(realizationSheetName => {
+        const plansForSheet = groupedPlans[realizationSheetName];
+        Logger.log(`Processing ${plansForSheet.length} plans for realization sheet: ${realizationSheetName}`);
+
+        processEmailsWithParams(plansForSheet, SHEETS_DATA, realizationSheetName);
+    });
 }
 
-function processEmailsWithParams(planData, sheetsData, realizationSheetName ) {
+function processEmailsWithParams(planData, sheetsData, realizationSheetName) {
     // Get realization data from the specified sheet
     const realizationSheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(realizationSheetName);
     const realizationData = realizationSheet ? realizationSheet.getDataRange().getValues().slice(1) : []; // Skip headers
