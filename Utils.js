@@ -24,13 +24,13 @@ function loadConfig(propertyDefs, options = {}) {
         if (!value) {
             // Check if default value is provided
             if (defaultValue !== undefined) {
-                Logger.log(`Property ${key} not found, using default value`);
+                console.log(`Property ${key} not found, using default value`);
                 config[key] = defaultValue;
             } else if (throwOnMissing) {
                 // Throw error if configured to do so
                 throw new Error(`Required property ${key} not found in Properties Service`);
             } else {
-                Logger.log(`Property ${key} not found in Properties Service`);
+                console.log(`Property ${key} not found in Properties Service`);
                 config[key] = null;
             }
         } else {

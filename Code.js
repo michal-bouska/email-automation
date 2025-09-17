@@ -1,7 +1,7 @@
 const MAIL_CONFIG = loadConfig([["RECIPIENT_COL", "Recipient"], ["EMAIL_PLAN_SHEET", "plan"], ["EMAIL_LOG_SHEET", "realizace"], ["SENDER_EMAIL", null], ["CC_EMAIL", ""], ["SENDER_NAME", null]]);
 
 function myFunction() {
-    Logger.log("Toto je výchozí funkce.");
+    console.log("Toto je výchozí funkce.");
     processEmails();
 }
 
@@ -25,7 +25,7 @@ function onOpen() {
 function fillInTemplateFromObject_(template, data) {
     // We have two templates one for plain text and the html body
     // Stringifing the object means we can do a global replace
-    // Logger.log(`Try to fill template: Template = ${JSON.stringify(template, null, 2)}, Data = ${JSON.stringify(data, null, 2)}`);
+    // console.log(`Try to fill template: Template = ${JSON.stringify(template, null, 2)}, Data = ${JSON.stringify(data, null, 2)}`);
     let template_string = JSON.stringify(template);
 
     // Token replacement
@@ -43,7 +43,7 @@ function fillInTemplateFromObject_(template, data) {
  * @return {string} escaped string
  */
 function escapeData_(str) {
-    // Logger.log(`Escaping data: ${str}, Type: ${typeof str}`);
+    // console.log(`Escaping data: ${str}, Type: ${typeof str}`);
     str = String(str);
     return str
         .replace(/[\\]/g, '\\\\')
@@ -93,8 +93,8 @@ function getGmailTemplateFromDrafts_(subject_line) {
             attachments: attachments, inlineImages: inlineImagesObj
         };
     } catch (e) {
-        Logger.error(`Error finding Gmail draft for subject '${subject_line}':`, e.message);
-        Logger.error('Stacktrace:', e.stack);
+        console.error(`Error finding Gmail draft for subject '${subject_line}':`, e.message);
+        console.error('Stacktrace:', e.stack);
         throw new Error(`Oops - can't find Gmail draft for subject '${subject_line}': ${e.message}`);
     }
 
@@ -119,7 +119,7 @@ function getGmailTemplateFromDrafts_(subject_line) {
  */
 function generateQrCodeBlob(qrCodeObj) {
     if (!qrCodeObj) {
-        Logger.error("QR code data object is missing.");
+        console.error("QR code data object is missing.");
         return null;
     }
 
@@ -139,11 +139,11 @@ function generateQrCodeBlob(qrCodeObj) {
         if (response.getResponseCode() === 200) {
             return response.getBlob();
         } else {
-            Logger.error(`Failed to fetch QR code. HTTP response code ${response.getResponseCode()}.`);
+            console.error(`Failed to fetch QR code. HTTP response code ${response.getResponseCode()}.`);
             return null;
         }
     } catch (e) {
-        Logger.error(`Error generating QR code: ${e.message}`);
+        console.error(`Error generating QR code: ${e.message}`);
         return null;
     }
 }
@@ -316,7 +316,7 @@ const SHEETS_DATA = (() => {
         return map;
     }, {});
 
-    Logger.log("Loaded QR Code Data: %s", JSON.stringify(qrCodeObjects, null, 2));
+    console.log("Loaded QR Code Data: %s", JSON.stringify(qrCodeObjects, null, 2));
 
     return {
         plan: planData,
@@ -389,7 +389,7 @@ function parsePlanData() {
  * @return {string} Updated HTML body with QR code placeholders replaced.
  */
 function insertQrCodesIntoEmail(htmlBody, inlineImages, qrCodeObj) {
-    Logger.log("Start insertQrCodesIntoEmail")
+    console.log("Start insertQrCodesIntoEmail")
     const qrCodeBlob = generateQrCodeBlob(qrCodeObj);
     if (qrCodeBlob) {
         inlineImages[qrCodeObj.imageName] = qrCodeBlob;
@@ -404,7 +404,7 @@ function processEmails() {
     // Process each realization sheet separately
     Object.keys(groupedPlans).forEach(realizationSheetName => {
         const plansForSheet = groupedPlans[realizationSheetName];
-        Logger.log(`Processing ${plansForSheet.length} plans for realization sheet: ${realizationSheetName}`);
+        console.log(`Processing ${plansForSheet.length} plans for realization sheet: ${realizationSheetName}`);
 
         processEmailsWithParams(plansForSheet, SHEETS_DATA, realizationSheetName);
     });
@@ -435,13 +435,13 @@ function processEmailsWithParams(planData, sheetsData, realizationSheetName) {
             const conditionValue = recipientRow[conditionColIdx];
             const sentValue = recipientRow[sentColIdx];
 
-            Logger.log(
+            console.log(
                 `Parsed recipient row ${recipientIndex + 2}: ` +
                 `Recipient = ${recipient}, Condition Value = ${conditionValue}, Sent Value = ${sentValue}`
             );
 
             if ((conditionValue === 1 && sentValue === "") || (conditionValue === 2)) {
-                Logger.log(
+                console.log(
                     `Preparing to send email for topic: ${plan.emailTopic} to recipient: ${recipient} at row ${recipientIndex + 2}.`
                 );
 
@@ -453,18 +453,18 @@ function processEmailsWithParams(planData, sheetsData, realizationSheetName) {
                 let attachments;
                 let inlineImages;
 
-                Logger.log("Start looking for mail template.")
+                console.log("Start looking for mail template.")
                 try {
                     emailTemplate = getGmailTemplateFromDrafts_(plan.emailTopic);
                 } catch (error) {
-                    Logger.error(`Failed get template from drafts ${recipient}: ${error.message}`);
+                    console.error(`Failed get template from drafts ${recipient}: ${error.message}`);
                     sentStatus = `${error.message} at ${Date()}`;
-                    Logger.log("Stacktrace:", error.stack);
+                    console.log("Stacktrace:", error.stack);
                     realizationSheet.getRange(recipientIndex + 2, sentColIdx + 1).setValue(sentStatus);
                     return null
                 }
 
-                Logger.log("Start preparing data mapping.")
+                console.log("Start preparing data mapping.")
                 try {
                     // Create mapping of realization headers to their respective data
                     dataMapping = realizationHeaders.reduce((map, header, index) => {
@@ -472,14 +472,14 @@ function processEmailsWithParams(planData, sheetsData, realizationSheetName) {
                         return map;
                     }, {});
                 } catch (error) {
-                    Logger.error(`Failed to parse realisation ${recipient}: ${error.message}`);
+                    console.error(`Failed to parse realisation ${recipient}: ${error.message}`);
                     sentStatus = `${error.message} at ${new Date().toISOString()}`;
-                    Logger.log("Stacktrace:", error.stack);
+                    console.log("Stacktrace:", error.stack);
                     realizationSheet.getRange(recipientIndex + 2, sentColIdx + 1).setValue(sentStatus);
                     return null
                 }
 
-                Logger.log("Start preparing qr code data mapping.")
+                console.log("Start preparing qr code data mapping.")
                 try {
                     // Include QR code mappings for specific email topic
                     if (sheetsData.qrCodes[plan.emailTopic]) {
@@ -497,14 +497,14 @@ function processEmailsWithParams(planData, sheetsData, realizationSheetName) {
                         });
                     }
                 } catch (error) {
-                    Logger.error(`Failed to generate qr code ${recipient}: ${error.message}`);
+                    console.error(`Failed to generate qr code ${recipient}: ${error.message}`);
                     sentStatus = `${error.message} at ${new Date().toISOString()}`;
-                    Logger.log("Stacktrace:", error.stack);
+                    console.log("Stacktrace:", error.stack);
                     realizationSheet.getRange(recipientIndex + 2, sentColIdx + 1).setValue(sentStatus);
                     return null
                 }
 
-                Logger.log("Start fill in template object.")
+                console.log("Start fill in template object.")
                 try {
                     msgObj = fillInTemplateFromObject_(emailTemplate.message, {
                         ...dataMapping,
@@ -513,14 +513,14 @@ function processEmailsWithParams(planData, sheetsData, realizationSheetName) {
                         sentValue
                     });
                 } catch (error) {
-                    Logger.error(`Failed to fill template ${recipient}: ${error.message}`);
+                    console.error(`Failed to fill template ${recipient}: ${error.message}`);
                     sentStatus = `${error.message} at ${new Date().toISOString()}`;
-                    Logger.log("Stacktrace:", error.stack);
+                    console.log("Stacktrace:", error.stack);
                     realizationSheet.getRange(recipientIndex + 2, sentColIdx + 1).setValue(sentStatus);
                     return null
                 }
 
-                Logger.log("Start inlining images.")
+                console.log("Start inlining images.")
                 try {
                     attachments = emailTemplate.attachments || [];
                     inlineImages = emailTemplate.inlineImages || {};
@@ -547,14 +547,14 @@ function processEmailsWithParams(planData, sheetsData, realizationSheetName) {
                         });
                     }
                 } catch (error) {
-                    Logger.error(`Failed to inline images ${recipient}: ${error.message}`);
+                    console.error(`Failed to inline images ${recipient}: ${error.message}`);
                     sentStatus = `${error.message} at ${new Date().toISOString()}`;
-                    Logger.log("Stacktrace:", error.stack);
+                    console.log("Stacktrace:", error.stack);
                     realizationSheet.getRange(recipientIndex + 2, sentColIdx + 1).setValue(sentStatus);
                     return null
                 }
 
-                Logger.log("Start sending email.")
+                console.log("Start sending email.")
                 try {
                     const emailOptions = {
                         from: plan.senderEmail,
@@ -570,9 +570,9 @@ function processEmailsWithParams(planData, sheetsData, realizationSheetName) {
 
                     sentStatus = new Date().toISOString();
                 } catch (error) {
-                    Logger.error(`Failed to send prepared email ${recipient}: ${error.message}`);
+                    console.error(`Failed to send prepared email ${recipient}: ${error.message}`);
                     sentStatus = `${error.message} at ${new Date().toISOString()}`;
-                    Logger.log("Stacktrace:", error.stack);
+                    console.log("Stacktrace:", error.stack);
                     realizationSheet.getRange(recipientIndex + 2, sentColIdx + 1).setValue(sentStatus);
                     return null
                 }

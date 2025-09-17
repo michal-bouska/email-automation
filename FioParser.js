@@ -41,7 +41,7 @@ function getLastTransactions() {
 
     // Format the API URL using the correct Fio syntax
     const url = `https://fioapi.fio.cz/v1/rest/periods/${FIO_CONFIG.FIO_API_TOKEN}/${dateFrom}/${dateTo}/transactions.json`;
-    Logger.log("URL: " + url);
+    console.log("URL: " + url);
 
     let response_value;
     try {
@@ -56,8 +56,8 @@ function getLastTransactions() {
         // Parse and return JSON response
         return JSON.parse(response_value);
     } catch (error) {
-        Logger.log("Resp: " + response_value);
-        Logger.log('Error fetching data from Fio API: ' + error);
+        console.log("Resp: " + response_value);
+        console.log('Error fetching data from Fio API: ' + error);
         return null;
     }
 }
@@ -81,7 +81,7 @@ function parseTransactionNote(note) {
     // Keep only strings with exactly 8 characters (keys)
     const validKeys = parts.filter(part => part.length === 8);
 
-    Logger.log('Valid keys: ' + validKeys.join(';'));
+    console.log('Valid keys: ' + validKeys.join(';'));
 
     return {
         keys: validKeys.join(';'),
@@ -169,7 +169,7 @@ function writeTransactionsToSheet() {
     const transactionsData = getLastTransactions();
 
     if (!transactionsData || !transactionsData.accountStatement || !transactionsData.accountStatement.transactionList) {
-        Logger.log('No new transaction data available');
+        console.log('No new transaction data available');
         return;
     }
 
@@ -177,7 +177,7 @@ function writeTransactionsToSheet() {
     const transactions = transactionsData.accountStatement.transactionList.transaction || [];
 
     if (transactions.length === 0) {
-        Logger.log('No new transactions found');
+        console.log('No new transactions found');
         return;
     }
 
@@ -185,7 +185,7 @@ function writeTransactionsToSheet() {
     const sheetName = FIO_CONFIG.FIO_SYNC_SHEET;
     const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(sheetName);
     if (!sheet) {
-        Logger.log(`Sheet "${sheetName}" not found in the spreadsheet`);
+        console.log(`Sheet "${sheetName}" not found in the spreadsheet`);
         return;
     }
 
@@ -230,7 +230,7 @@ function writeTransactionsToSheet() {
                 filteredTransactionsCount++;
             }
         } else {
-             Logger.log(`Skipping duplicate transaction with ID: ${transactionId}`);
+             console.log(`Skipping duplicate transaction with ID: ${transactionId}`);
         }
     });
 
@@ -240,8 +240,8 @@ function writeTransactionsToSheet() {
         sheet.autoResizeColumns(1, headers.length);
     }
 
-    Logger.log(`Total new transactions to check: ${newTransactionsCount}`);
-    Logger.log(`Added ${filteredTransactionsCount} new transactions with variable symbol ${FIO_CONFIG.VARIABLE_SYMBOL_KEY}`);
+    console.log(`Total new transactions to check: ${newTransactionsCount}`);
+    console.log(`Added ${filteredTransactionsCount} new transactions with variable symbol ${FIO_CONFIG.VARIABLE_SYMBOL_KEY}`);
 }
 
 /**
