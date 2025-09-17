@@ -1,4 +1,14 @@
 /**
+ * Creates a custom menu in the Google Sheet when it is opened.
+ */
+function onOpen() {
+  SpreadsheetApp.getUi()
+      .createMenu('Fio Sync')
+      .addItem('Načíst nové platby', 'runUpdate')
+      .addToUi();
+}
+
+/**
  * Fetch transactions from Fio Bank API using Google Apps Script
  * This script connects to Fio Bank API and retrieves account transactions since the last fetch
  * with additional parsing for specific transaction keys in recipient notes
@@ -14,14 +24,24 @@ function manualRun() {
 const FIO_CONFIG = loadConfig([["FIO_API_TOKEN", "missing_fio_token"], ["VARIABLE_SYMBOL_KEY", '72405'], ["FIO_SYNC_SHEET", "FioSync"]]);
 
 /**
- * Get transactions since the last fetch from Fio Bank API
- * The bank automatically tracks the last fetch on their server
+ * Get transactions for the last 90 days from Fio Bank API
  * @return {Object} JSON response with transactions
  */
 function getLastTransactions() {
-    // Format the API URL for last transactions endpoint
-    const url = `https://fioapi.fio.cz/v1/rest/last/${FIO_CONFIG.FIO_API_TOKEN}/transactions.json`;
-    Logger.log("URL: " + url)
+
+    // Calculate the start date (today minus 90 days)
+    const today = new Date();
+    const ninetyDaysAgo = new Date();
+    ninetyDaysAgo.setDate(today.getDate() - 90);
+
+    // Format dates to YYYY-MM-DD using a fixed timezone
+    const formatDate = (date) => Utilities.formatDate(date, "Europe/Prague", "yyyy-MM-dd");
+    const dateFrom = formatDate(ninetyDaysAgo);
+    const dateTo = formatDate(today);
+
+    // Format the API URL using the correct Fio syntax
+    const url = `https://fioapi.fio.cz/v1/rest/periods/${FIO_CONFIG.FIO_API_TOKEN}/${dateFrom}/${dateTo}/transactions.json`;
+    Logger.log("URL: " + url);
 
     let response_value;
     try {
@@ -31,12 +51,12 @@ function getLastTransactions() {
             'muteHttpExceptions': true
         });
 
-        response_value = response.getContentText()
+        response_value = response.getContentText();
 
         // Parse and return JSON response
         return JSON.parse(response_value);
     } catch (error) {
-        Logger.log("Resp: " + response_value)
+        Logger.log("Resp: " + response_value);
         Logger.log('Error fetching data from Fio API: ' + error);
         return null;
     }
@@ -83,7 +103,18 @@ function processTransaction(transaction, sheet, variableSymbolKey) {
     const transactionId = transaction.column22?.value || '';
 
     // Get date, amount, currency
-    const date = transaction.column0?.value || '';
+    const dateValue = transaction.column0?.value || '';
+
+    let formattedDate;
+    if (dateValue) {
+        // Step 1: Convert the Fio API date string to a JavaScript Date object.
+        const dateObject = new Date(dateValue.split('+')[0]);
+        // Step 2: Format the Date object into a DD.MM.YYYY string.
+        formattedDate = Utilities.formatDate(dateObject, Session.getScriptTimeZone(), "dd.MM.yyyy");
+    } else {
+        formattedDate = '';
+    }
+
     const amount = transaction.column1?.value || '';
     const currency = transaction.column14?.value || '';
 
@@ -107,7 +138,8 @@ function processTransaction(transaction, sheet, variableSymbolKey) {
     }
 
     const row = [
-        date,
+        // Zde použijeme nově vytvořenou proměnnou
+        formattedDate,
         amount,
         currency,
         accountNumber,
@@ -172,19 +204,33 @@ function writeTransactionsToSheet() {
         sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
     }
 
+
+    const existingTransactionIds = new Set(
+        existingData.slice(1) // Přeskočení hlavičky
+                    .map(row => row[11]) // Získání ID z 12. sloupce
+                    .filter(id => id) // Vyfiltrování prázdných hodnot
+    );
+
     // Counter for new transactions
     let newTransactionsCount = 0;
     let filteredTransactionsCount = 0;
 
     // Process each transaction
     transactions.forEach(transaction => {
-        newTransactionsCount++;
+        const transactionId = transaction.column22?.value || '';
 
-        // Use the named function to process the transaction
-        const wasProcessed = processTransaction(transaction, sheet, FIO_CONFIG.VARIABLE_SYMBOL_KEY);
+        // Přidáme transakci pouze, pokud ještě neexistuje v listu
+        if (transactionId && !existingTransactionIds.has(transactionId)) {
+            newTransactionsCount++;
 
-        if (wasProcessed) {
-            filteredTransactionsCount++;
+            // Use the named function to process the transaction
+            const wasProcessed = processTransaction(transaction, sheet, FIO_CONFIG.VARIABLE_SYMBOL_KEY);
+
+            if (wasProcessed) {
+                filteredTransactionsCount++;
+            }
+        } else {
+             Logger.log(`Skipping duplicate transaction with ID: ${transactionId}`);
         }
     });
 
@@ -194,10 +240,9 @@ function writeTransactionsToSheet() {
         sheet.autoResizeColumns(1, headers.length);
     }
 
-    Logger.log(`Total new transactions: ${newTransactionsCount}`);
+    Logger.log(`Total new transactions to check: ${newTransactionsCount}`);
     Logger.log(`Added ${filteredTransactionsCount} new transactions with variable symbol ${FIO_CONFIG.VARIABLE_SYMBOL_KEY}`);
 }
-
 
 /**
  * Create a trigger to automatically run the target function every 5 minutes
@@ -224,4 +269,3 @@ function createFiveMinuteTrigger() {
 function runUpdate() {
     writeTransactionsToSheet();
 }
-
