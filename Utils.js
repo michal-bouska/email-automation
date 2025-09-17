@@ -74,9 +74,9 @@ function convertToIBAN(accountNumber, bankCode, prefix = "") {
     // BBAN (Basic Bank Account Number) format for Czech Republic
     const bban = bankCode + prefix + accountNumber;
 
-    // Convert country code "CZ" to numeric format (C=3, Z=35) -> "32635"
+    // Convert country code "CZ" to numeric format (C=3, Z=35) -> "1235"
     const countryCode = "CZ";
-    const countryCodeNum = "3235";
+    const countryCodeNum = "1235";
 
     // Add "00" at the end (check digits, initially set to 00)
     const numericRepresentation = bban + countryCodeNum + "00";
