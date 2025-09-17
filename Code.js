@@ -163,7 +163,7 @@ function generatePaymentQrData(accountNumber, bankCode, currency, amount, variab
     let dataString = `SPD*1.0*ACC:${iban}*AM:${amount.toFixed(2)}*CC:${currency}`;
 
     if (variableSymbol) {
-        dataString += `*VS:${variableSymbol}`;
+        dataString += `*X-VS:${variableSymbol}`;
     }
 
     if (message) {
