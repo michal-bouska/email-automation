@@ -93,6 +93,7 @@ const DRAFT_CACHE = (() => {
   let drafts = null;
   const templates = {};
   const notFound = {};
+  const htmlTemplates = {};
 
   return {
     getDrafts() {
@@ -111,6 +112,12 @@ const DRAFT_CACHE = (() => {
     },
     setNotFound(subjectLine) {
       notFound[subjectLine] = true;
+    },
+    getHtmlTemplate(filename) {
+      return htmlTemplates[filename] || undefined;
+    },
+    setHtmlTemplate(filename, template) {
+      htmlTemplates[filename] = template;
     }
   };
 })();
@@ -165,6 +172,71 @@ function getGmailTemplateFromDrafts_(subject_line){
       }
     }
   }
+}
+
+/**
+ * Loads an HTML email template from a Google Drive folder.
+ * Folder ID is configured as Script Property "HTML_TEMPLATES_FOLDER_ID".
+ * @param {string} filename The HTML file name (e.g., "invoice.html").
+ * @param {string} subjectLine The subject line for the email.
+ * @return {object} Template object matching getGmailTemplateFromDrafts_ structure.
+ */
+function getHtmlTemplateFromDrive_(filename, subjectLine) {
+  const folderId = PropertiesService.getScriptProperties().getProperty('HTML_TEMPLATES_FOLDER_ID');
+  if (!folderId) {
+    throw new Error("Script Property 'HTML_TEMPLATES_FOLDER_ID' is not configured.");
+  }
+
+  const folder = DriveApp.getFolderById(folderId);
+  const files = folder.getFilesByName(filename);
+
+  if (!files.hasNext()) {
+    throw new Error(`HTML template file "${filename}" not found in Drive folder.`);
+  }
+
+  const file = files.next();
+  const htmlContent = file.getBlob().getDataAsString();
+
+  const plainText = htmlContent
+    .replace(/<br\s*\/?>/gi, '\n')
+    .replace(/<\/p>/gi, '\n\n')
+    .replace(/<\/div>/gi, '\n')
+    .replace(/<\/li>/gi, '\n')
+    .replace(/<[^>]+>/g, '')
+    .replace(/&nbsp;/gi, ' ')
+    .replace(/&amp;/gi, '&')
+    .replace(/&lt;/gi, '<')
+    .replace(/&gt;/gi, '>')
+    .replace(/&quot;/gi, '"')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+
+  return {
+    message: { subject: subjectLine, text: plainText, html: htmlContent },
+    attachments: [],
+    inlineImages: {}
+  };
+}
+
+/**
+ * Unified template loader. Selects source based on plan's templateSource.
+ * @param {object} plan The parsed plan row object.
+ * @return {object} Template object with { message, attachments, inlineImages }.
+ */
+function getEmailTemplate_(plan) {
+  const source = (plan.templateSource || "").trim().toLowerCase();
+
+  if (source === "" || source === "draft") {
+    return getGmailTemplateFromDrafts_(plan.emailTopic);
+  }
+
+  const filename = plan.templateSource.trim();
+  const cached = DRAFT_CACHE.getHtmlTemplate(filename);
+  if (cached) return cached;
+
+  const template = getHtmlTemplateFromDrive_(filename, plan.emailTopic);
+  DRAFT_CACHE.setHtmlTemplate(filename, template);
+  return template;
 }
 
 /**
@@ -371,6 +443,7 @@ function parsePlanData() {
   const sentDateColumnIdx = headers.indexOf("Column Sent");
   const documentIdIdx = headers.indexOf("Document ID");
   const sheetNameIdx = headers.indexOf("Sheet Name");
+  const templateSourceIdx = headers.indexOf("Template Source");
 
   if (emailTopicIdx === -1 || conditionColumnIdx === -1 || sentDateColumnIdx === -1) {
     throw new Error("Required headers are missing in the plan data.");
@@ -396,7 +469,8 @@ function parsePlanData() {
         conditionColumn: row[conditionColumnIdx],
         sentColumn: row[sentDateColumnIdx],
         documentId: String(documentId),
-        sheetName: String(sheetName)
+        sheetName: String(sheetName),
+        templateSource: templateSourceIdx !== -1 ? String(row[templateSourceIdx] || "") : ""
       };
     });
 }
@@ -472,7 +546,7 @@ function processEmails() {
       let emailTemplate, dataMapping, msgObj, attachments, inlineImages;
 
       try {
-        emailTemplate = getGmailTemplateFromDrafts_(plan.emailTopic);
+        emailTemplate = getEmailTemplate_(plan);
       } catch (error) {
         console.error(`Failed to get template for ${recipient}: ${error.message}`);
         writeSentStatus(`${error.message} at ${new Date().toISOString()}`);
