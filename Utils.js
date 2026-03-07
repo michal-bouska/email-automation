@@ -78,3 +78,57 @@ function formatIBAN(iban) {
 // const iban2 = convertToIBAN(123456789, 800, 19);             // All integers
 // const iban3 = convertToIBAN("123456789", 800, 19);           // Mixed types
 // console.log(iban1); // Prints: CZ65 0800 0000 1900 1234 5678
+
+/**
+ * Sends a ping to Healthchecks.io. Failures are logged but never block execution.
+ * @param {string} suffix URL suffix: "" for success, "/start" for start, "/fail" for failure.
+ * @param {string} body Optional POST body (error details on /fail).
+ * @param {string} propertyName Script Property name for the ping URL (default: HEALTHCHECKS_PING_URL).
+ */
+function pingHealthcheck_(suffix, body, propertyName) {
+  propertyName = propertyName || 'HEALTHCHECKS_PING_URL';
+  const pingUrl = PropertiesService.getScriptProperties().getProperty(propertyName);
+  if (!pingUrl) {
+    Logger.log(`${propertyName} not configured, skipping healthcheck ping.`);
+    return;
+  }
+
+  const url = pingUrl.replace(/\/+$/, '') + suffix;
+
+  try {
+    const options = {
+      method: body ? 'post' : 'get',
+      muteHttpExceptions: true
+    };
+
+    if (body) {
+      options.payload = body;
+      options.contentType = 'text/plain';
+    }
+
+    const response = UrlFetchApp.fetch(url, options);
+    Logger.log(`Healthcheck ping ${suffix || '/success'}: HTTP ${response.getResponseCode()}`);
+  } catch (error) {
+    Logger.log(`Healthcheck ping failed (non-blocking): ${error.message}`);
+  }
+}
+
+/**
+ * Wraps a function with Healthchecks.io start/success/fail pings.
+ * @param {Function} fn The function to wrap.
+ * @param {string} propertyName Script Property name for the ping URL.
+ * @return {Function} Wrapped function.
+ */
+function withHealthcheck_(fn, propertyName) {
+  return function(...args) {
+    pingHealthcheck_('/start', null, propertyName);
+    try {
+      const result = fn.apply(this, args);
+      pingHealthcheck_('', null, propertyName);
+      return result;
+    } catch (error) {
+      pingHealthcheck_('/fail', `${error.message}\n\n${error.stack || ''}`, propertyName);
+      throw error;
+    }
+  };
+}

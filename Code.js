@@ -28,9 +28,13 @@ limitations under the License.
 const RECIPIENT_COL  = "Recipient";
 const EMAIL_SENT_COL = "Email Sent";
 
+function processEmailsMonitored() {
+  withHealthcheck_(processEmails)();
+}
+
 function myFunction() {
   Logger.log("Toto je výchozí funkce.");
-  processEmails();
+  processEmailsMonitored();
 }
  
 /** 

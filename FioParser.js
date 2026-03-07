@@ -8,7 +8,7 @@
  * Function to manually run the script from the script editor
  */
 function manualRun() {
-    runUpdate();
+    runUpdateMonitored();
 }
 
 // Function to get Fio token from secure storage
@@ -220,13 +220,13 @@ function createFiveMinuteTrigger() {
     // Delete any existing triggers with the same function name
     const triggers = ScriptApp.getProjectTriggers();
     for (let i = 0; i < triggers.length; i++) {
-        if (triggers[i].getHandlerFunction() === 'runUpdate') {
+        if (triggers[i].getHandlerFunction() === 'runUpdateMonitored') {
             ScriptApp.deleteTrigger(triggers[i]);
         }
     }
 
     // Create a new trigger to run every 5 minutes
-    ScriptApp.newTrigger('runUpdate')
+    ScriptApp.newTrigger('runUpdateMonitored')
         .timeBased()
         .everyMinutes(5) // Run every 5 minutes
         .create();
@@ -238,5 +238,9 @@ function createFiveMinuteTrigger() {
 function runUpdate() {
     const SHEET_NAME = 'FioSync';
     writeTransactionsToSheet(SHEET_NAME);
+}
+
+function runUpdateMonitored() {
+  withHealthcheck_(runUpdate)();
 }
 
