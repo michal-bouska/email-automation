@@ -1,5 +1,8 @@
 const MAIL_CONFIG = loadConfig([["RECIPIENT_COL", "Recipient"], ["EMAIL_PLAN_SHEET", "plan"], ["EMAIL_LOG_SHEET", "realizace"], ["SENDER_EMAIL", null], ["CC_EMAIL", ""], ["SENDER_NAME", null]]);
 
+const RECIPIENT_COL  = "Recipient";
+const EMAIL_SENT_COL = "Email Sent";
+
 function myFunction() {
     console.log("Toto je výchozí funkce.");
     processEmails();
@@ -294,117 +297,138 @@ function consolidateQrCodeData(qrCodeObj, recipientRow, realizationHeaders) {
 }
 
 
-const SHEETS_DATA = (() => {
-    const spreadsheet = SpreadsheetApp.getActiveSpreadsheet();
-    const planSheet = spreadsheet.getSheetByName(MAIL_CONFIG.EMAIL_PLAN_SHEET);
-    const qrCodeSheet = spreadsheet.getSheetByName("QRCodes");
-
-    const planData = planSheet ? planSheet.getDataRange().getValues() : [];
-    const qrCodeData = qrCodeSheet ? qrCodeSheet.getDataRange().getValues() : [];
-
-    // Parse QR Code data into objects mapped by Email Topic and global QR codes
-    const qrCodeHeaders = qrCodeData[0];
-    const qrCodeObjects = qrCodeData.slice(1).reduce((map, row) => {
-        const qrCodeObj = {
-            emailTopic: row[qrCodeHeaders.indexOf("EmailTopic")],
-            imageName: row[qrCodeHeaders.indexOf("ImageName")],
-            accountNumber: row[qrCodeHeaders.indexOf("AccountNumber")],
-            bankCode: row[qrCodeHeaders.indexOf("BankCode")],
-            currency: row[qrCodeHeaders.indexOf("Currency")],
-            amount: row[qrCodeHeaders.indexOf("Amount")],
-            amountColumn: row[qrCodeHeaders.indexOf("AmountColumn")],
-            variableSymbol: row[qrCodeHeaders.indexOf("VariableSymbol")],
-            variableSymbolColumn: row[qrCodeHeaders.indexOf("VariableSymbolColumn")],
-            message: row[qrCodeHeaders.indexOf("Message")],
-            messageColumn: row[qrCodeHeaders.indexOf("MessageColumn")],
-            size: row[qrCodeHeaders.indexOf("Size")]
-        };
-
-        // Skip rows without imageName
-        if (!qrCodeObj.imageName) {
-            return map;
-        }
-
-        if (qrCodeObj.emailTopic) {
-            // QR code for specific email topic
-            if (!map[qrCodeObj.emailTopic]) {
-                map[qrCodeObj.emailTopic] = [];
-            }
-            map[qrCodeObj.emailTopic].push(qrCodeObj);
-        } else {
-            // Global QR code (empty EmailTopic) - add to special "GLOBAL" key
-            if (!map["GLOBAL"]) {
-                map["GLOBAL"] = [];
-            }
-            map["GLOBAL"].push(qrCodeObj);
-        }
-
-        return map;
-    }, {});
-
-    console.log("Loaded QR Code Data: %s", JSON.stringify(qrCodeObjects, null, 2));
-
-    return {
-        plan: planData,
-        qrCodes: qrCodeObjects
-    };
+/**
+ * Module-level plan data loader. Only loads the plan sheet from the active spreadsheet.
+ */
+const PLAN_DATA = (() => {
+  const spreadsheet = SpreadsheetApp.getActiveSpreadsheet();
+  const planSheet = spreadsheet.getSheetByName("plan");
+  return planSheet ? planSheet.getDataRange().getValues() : [];
 })();
 
 /**
- * Transforms plan data into objects with validation and groups them by realization sheet.
- * Assumes the first row contains headers "Email Topic", "Column Condition To Send", "Column Sent",
- * and optionally "Sender Email", "CC", "BCC", "Sender Name", "Realization Sheet".
- * Checks that "Column Condition To Send" and "Column Sent" contain valid column names ([a-z]+).
- * @returns {Object} Object with realization sheet names as keys and arrays of plan objects as values.
+ * Cache for opened external spreadsheets, keyed by Document ID.
+ */
+const SPREADSHEET_CACHE = (() => {
+  const cache = {};
+  return {
+    get(documentId) {
+      if (!cache[documentId]) {
+        cache[documentId] = SpreadsheetApp.openById(documentId);
+      }
+      return cache[documentId];
+    }
+  };
+})();
+
+/**
+ * Parses QR code sheet data into objects mapped by Email Topic.
+ * @param {any[][]} qrCodeData Raw 2D array from the QRCodes sheet (including header row).
+ * @return {object} Map of emailTopic -> Array of qrCodeObj.
+ */
+function parseQrCodeData(qrCodeData) {
+  if (!qrCodeData || qrCodeData.length < 2) {
+    return {};
+  }
+
+  const qrCodeHeaders = qrCodeData[0];
+  return qrCodeData.slice(1).reduce((map, row) => {
+    const qrCodeObj = {
+      emailTopic: row[qrCodeHeaders.indexOf("EmailTopic")],
+      imageName: row[qrCodeHeaders.indexOf("ImageName")],
+      accountNumber: row[qrCodeHeaders.indexOf("AccountNumber")],
+      bankCode: row[qrCodeHeaders.indexOf("BankCode")],
+      currency: row[qrCodeHeaders.indexOf("Currency")],
+      amount: row[qrCodeHeaders.indexOf("Amount")],
+      variableSymbol: row[qrCodeHeaders.indexOf("VariableSymbol")],
+      variableSymbolColumn: row[qrCodeHeaders.indexOf("VariableSymbolColumn")],
+      message: row[qrCodeHeaders.indexOf("Message")],
+      size: row[qrCodeHeaders.indexOf("Size")]
+    };
+
+    if (qrCodeObj.emailTopic) {
+      if (!map[qrCodeObj.emailTopic]) {
+        map[qrCodeObj.emailTopic] = [];
+      }
+      map[qrCodeObj.emailTopic].push(qrCodeObj);
+    }
+
+    return map;
+  }, {});
+}
+
+/**
+ * Loads realization data and QR code data from an external spreadsheet.
+ * @param {string} documentId The Google Spreadsheet ID.
+ * @param {string} sheetName The sheet tab name containing realization data.
+ * @return {object} { headers, data, qrCodes, sheet }
+ */
+function loadRealizationDocument(documentId, sheetName) {
+  const spreadsheet = SPREADSHEET_CACHE.get(documentId);
+
+  const realizationSheet = spreadsheet.getSheetByName(sheetName);
+  if (!realizationSheet) {
+    throw new Error(`Sheet "${sheetName}" not found in document ${documentId}.`);
+  }
+
+  const realizationRaw = realizationSheet.getDataRange().getValues();
+  const headers = realizationRaw[0] || [];
+  const data = realizationRaw.slice(1);
+
+  const qrCodeSheet = spreadsheet.getSheetByName("QRCodes");
+  let qrCodes = {};
+  if (qrCodeSheet) {
+    qrCodes = parseQrCodeData(qrCodeSheet.getDataRange().getValues());
+  }
+
+  return { headers, data, qrCodes, sheet: realizationSheet };
+}
+
+/**
+ * Transforms plan data into objects with validation.
+ * Plan sheet columns: Email Topic, Column Condition To Send, Column Sent, Document ID, Sheet Name.
+ * @returns {Array<Object>} Array of parsed plan objects.
  */
 function parsePlanData() {
-    const planData = SHEETS_DATA.plan;
-    if (!planData || planData.length < 2) {
-        throw new Error("Plan data is missing or insufficient rows.");
-    }
+  const planData = PLAN_DATA;
+  if (!planData || planData.length < 2) {
+    throw new Error("Plan data is missing or insufficient rows.");
+  }
 
-    const headers = planData[0];
-    const emailTopicIdx = headers.indexOf("Email Topic");
-    const conditionColumnIdx = headers.indexOf("Column Condition To Send");
-    const sentDateColumnIdx = headers.indexOf("Column Sent");
+  const headers = planData[0];
+  const emailTopicIdx = headers.indexOf("Email Topic");
+  const conditionColumnIdx = headers.indexOf("Column Condition To Send");
+  const sentDateColumnIdx = headers.indexOf("Column Sent");
+  const documentIdIdx = headers.indexOf("Document ID");
+  const sheetNameIdx = headers.indexOf("Sheet Name");
 
-    // Optional email configuration columns
-    const senderEmailIdx = headers.indexOf("Sender Email");
-    const ccIdx = headers.indexOf("CC");
-    const bccIdx = headers.indexOf("BCC");
-    const senderNameIdx = headers.indexOf("Sender Name");
-    const realizationSheetIdx = headers.indexOf("Realization Sheet");
+  if (emailTopicIdx === -1 || conditionColumnIdx === -1 || sentDateColumnIdx === -1) {
+    throw new Error("Required headers are missing in the plan data.");
+  }
+  if (documentIdIdx === -1 || sheetNameIdx === -1) {
+    throw new Error("Document ID and Sheet Name columns are required in the plan data.");
+  }
 
-    if (emailTopicIdx === -1 || conditionColumnIdx === -1 || sentDateColumnIdx === -1) {
-        throw new Error("Required headers are missing in the plan data.");
-    }
+  return planData.slice(1)
+    .filter(row => row[emailTopicIdx])
+    .map(row => {
+      const documentId = row[documentIdIdx];
+      const sheetName = row[sheetNameIdx];
 
-    const plans = planData.slice(1).map(row => {
-        return {
-            emailTopic: row[emailTopicIdx],
-            conditionColumn: row[conditionColumnIdx],
-            sentColumn: row[sentDateColumnIdx],
-            // Email configuration with fallback to MAIL_CONFIG defaults
-            senderEmail: senderEmailIdx !== -1 && row[senderEmailIdx] ? row[senderEmailIdx] : MAIL_CONFIG.SENDER_EMAIL,
-            cc: ccIdx !== -1 && row[ccIdx] ? row[ccIdx] : MAIL_CONFIG.CC_EMAIL,
-            bcc: bccIdx !== -1 && row[bccIdx] ? row[bccIdx] : null,
-            senderName: senderNameIdx !== -1 && row[senderNameIdx] ? row[senderNameIdx] : MAIL_CONFIG.SENDER_NAME,
-            // Realization sheet with fallback to MAIL_CONFIG default
-            realizationSheet: realizationSheetIdx !== -1 && row[realizationSheetIdx] ? row[realizationSheetIdx] : MAIL_CONFIG.EMAIL_LOG_SHEET
-        };
+      if (!documentId || !sheetName) {
+        throw new Error(
+          `Plan row for topic "${row[emailTopicIdx]}" is missing Document ID or Sheet Name.`
+        );
+      }
+
+      return {
+        emailTopic: row[emailTopicIdx],
+        conditionColumn: row[conditionColumnIdx],
+        sentColumn: row[sentDateColumnIdx],
+        documentId: String(documentId),
+        sheetName: String(sheetName)
+      };
     });
-
-    // Group plans by realization sheet
-    const groupedPlans = plans.reduce((groups, plan) => {
-        const sheetName = plan.realizationSheet;
-        if (!groups[sheetName]) {
-            groups[sheetName] = [];
-        }
-        groups[sheetName].push(plan);
-        return groups;
-    }, {});
-
-    return groupedPlans;
 }
 
 /**
@@ -425,15 +449,135 @@ function insertQrCodesIntoEmail(htmlBody, inlineImages, qrCodeObj) {
 }
 
 function processEmails() {
-    const groupedPlans = parsePlanData();
+  const planData = parsePlanData();
+  const realizationCache = {};
 
-    // Process each realization sheet separately
-    Object.keys(groupedPlans).forEach(realizationSheetName => {
-        const plansForSheet = groupedPlans[realizationSheetName];
-        console.log(`Processing ${plansForSheet.length} plans for realization sheet: ${realizationSheetName}`);
+  planData.forEach(plan => {
+    const cacheKey = `${plan.documentId}|${plan.sheetName}`;
 
-        processEmailsWithParams(plansForSheet, SHEETS_DATA, realizationSheetName);
+    let realizationDoc;
+    if (realizationCache[cacheKey]) {
+      realizationDoc = realizationCache[cacheKey];
+    } else {
+      try {
+        realizationDoc = loadRealizationDocument(plan.documentId, plan.sheetName);
+        realizationCache[cacheKey] = realizationDoc;
+      } catch (error) {
+        console.error(`Failed to load realization document for topic "${plan.emailTopic}": ${error.message}`);
+        return;
+      }
+    }
+
+    const { headers: realizationHeaders, data: realizationData, qrCodes, sheet: realizationSheet } = realizationDoc;
+
+    const recipientIdx = realizationHeaders.indexOf(RECIPIENT_COL);
+    if (recipientIdx === -1) {
+      console.error(`Recipient column (${RECIPIENT_COL}) not found in document ${plan.documentId}, sheet ${plan.sheetName}.`);
+      return;
+    }
+
+    const conditionColIdx = realizationHeaders.indexOf(plan.conditionColumn);
+    const sentColIdx = realizationHeaders.indexOf(plan.sentColumn);
+
+    if (conditionColIdx === -1 || sentColIdx === -1) {
+      console.error(`Columns "${plan.conditionColumn}" or "${plan.sentColumn}" not found in document ${plan.documentId}, sheet ${plan.sheetName}.`);
+      return;
+    }
+
+    realizationData.forEach((recipientRow, recipientIndex) => {
+      const recipient = recipientRow[recipientIdx];
+      const conditionValue = recipientRow[conditionColIdx];
+      const sentValue = recipientRow[sentColIdx];
+
+      if (conditionValue !== 1 || sentValue !== "") {
+        return;
+      }
+
+      console.log(`Preparing to send email for topic: ${plan.emailTopic} to recipient: ${recipient} at row ${recipientIndex + 2}.`);
+
+      const writeSentStatus = (status) => {
+        realizationSheet.getRange(recipientIndex + 2, sentColIdx + 1).setValue(status);
+      };
+
+      let emailTemplate, dataMapping, msgObj, attachments, inlineImages;
+
+      try {
+        emailTemplate = getGmailTemplateFromDrafts_(plan.emailTopic);
+      } catch (error) {
+        console.error(`Failed to get template for ${recipient}: ${error.message}`);
+        writeSentStatus(`${error.message} at ${new Date().toISOString()}`);
+        return;
+      }
+
+      try {
+        dataMapping = realizationHeaders.reduce((map, header, index) => {
+          map[header] = recipientRow[index];
+          return map;
+        }, {});
+      } catch (error) {
+        console.error(`Failed to parse realization for ${recipient}: ${error.message}`);
+        writeSentStatus(`${error.message} at ${new Date().toISOString()}`);
+        return;
+      }
+
+      try {
+        if (qrCodes[plan.emailTopic]) {
+          qrCodes[plan.emailTopic].forEach(qrCodeObj => {
+            consolidateQrCodeData(qrCodeObj, [recipientRow], realizationHeaders);
+            dataMapping[qrCodeObj.imageName] = `<img src="cid:${qrCodeObj.imageName}" alt="QR Code">`;
+          });
+        }
+      } catch (error) {
+        console.error(`Failed to generate QR code for ${recipient}: ${error.message}`);
+        writeSentStatus(`${error.message} at ${new Date().toISOString()}`);
+        return;
+      }
+
+      try {
+        msgObj = fillInTemplateFromObject_(emailTemplate.message, {
+          ...dataMapping,
+          recipient,
+          conditionValue,
+          sentValue
+        });
+      } catch (error) {
+        console.error(`Failed to fill template for ${recipient}: ${error.message}`);
+        writeSentStatus(`${error.message} at ${new Date().toISOString()}`);
+        return;
+      }
+
+      try {
+        attachments = emailTemplate.attachments || [];
+        inlineImages = emailTemplate.inlineImages || {};
+
+        if (qrCodes[plan.emailTopic]) {
+          qrCodes[plan.emailTopic].forEach(qrCodeObj => {
+            const consolidated = consolidateQrCodeData(qrCodeObj, [recipientRow], realizationHeaders);
+            msgObj.html = insertQrCodesIntoEmail(msgObj.html, inlineImages, consolidated);
+          });
+        }
+      } catch (error) {
+        console.error(`Failed to inline images for ${recipient}: ${error.message}`);
+        writeSentStatus(`${error.message} at ${new Date().toISOString()}`);
+        return;
+      }
+
+      try {
+        GmailApp.sendEmail(recipient, msgObj.subject, msgObj.text, {
+          htmlBody: msgObj.html,
+          attachments: attachments,
+          inlineImages: inlineImages
+        });
+
+        const range = realizationSheet.getRange(recipientIndex + 2, sentColIdx + 1);
+        range.setValue(new Date().toISOString());
+        range.setNumberFormat("dd.MM.yyyy HH:mm:ss");
+      } catch (error) {
+        console.error(`Failed to send email to ${recipient}: ${error.message}`);
+        writeSentStatus(`${error.message} at ${new Date().toISOString()}`);
+      }
     });
+  });
 }
 
 function processEmailsWithParams(planData, sheetsData, realizationSheetName) {
