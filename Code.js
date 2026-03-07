@@ -3,9 +3,13 @@ const MAIL_CONFIG = loadConfig([["RECIPIENT_COL", "Recipient"], ["EMAIL_PLAN_SHE
 const RECIPIENT_COL  = "Recipient";
 const EMAIL_SENT_COL = "Email Sent";
 
+function processEmailsMonitored() {
+  withHealthcheck_(processEmails)();
+}
+
 function myFunction() {
     console.log("Toto je výchozí funkce.");
-    processEmails();
+    processEmailsMonitored();
 }
 
 /**
