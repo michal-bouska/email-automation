@@ -85,46 +85,79 @@ function escapeData_(str) {
     .replace(/[\t]/g, '\\t');
 }
 
+/**
+ * Module-level cache for Gmail drafts and processed templates.
+ * Fetches drafts lazily on first access and caches processed templates by subject line.
+ */
+const DRAFT_CACHE = (() => {
+  let drafts = null;
+  const templates = {};
+  const notFound = {};
+
+  return {
+    getDrafts() {
+      if (drafts === null) {
+        drafts = GmailApp.getDrafts();
+      }
+      return drafts;
+    },
+    getTemplate(subjectLine) {
+      if (templates[subjectLine]) return templates[subjectLine];
+      if (notFound[subjectLine]) return null;
+      return undefined;
+    },
+    setTemplate(subjectLine, template) {
+      templates[subjectLine] = template;
+    },
+    setNotFound(subjectLine) {
+      notFound[subjectLine] = true;
+    }
+  };
+})();
+
 function getGmailTemplateFromDrafts_(subject_line){
+  const cached = DRAFT_CACHE.getTemplate(subject_line);
+  if (cached) return cached;
+  if (cached === null) throw new Error("Oops - can't find Gmail draft");
+
   try {
-    // get drafts
-    const drafts = GmailApp.getDrafts();
-    // filter the drafts that match subject line
+    const drafts = DRAFT_CACHE.getDrafts();
     const draft = drafts.filter(subjectFilter_(subject_line))[0];
-    // get the message object
+
+    if (!draft) {
+      DRAFT_CACHE.setNotFound(subject_line);
+      throw new Error("Oops - can't find Gmail draft");
+    }
+
     const msg = draft.getMessage();
 
     // Handles inline images and attachments so they can be included in the merge
     // Based on https://stackoverflow.com/a/65813881/1027723
-    // Gets all attachments and inline image attachments
-    const allInlineImages = draft.getMessage().getAttachments({includeInlineImages: true,includeAttachments:false});
+    const allInlineImages = draft.getMessage().getAttachments({includeInlineImages: true, includeAttachments: false});
     const attachments = draft.getMessage().getAttachments({includeInlineImages: false});
     const htmlBody = msg.getBody();
 
-    // Creates an inline image object with the image name as key
-    // (can't rely on image index as array based on insert order)
-    const img_obj = allInlineImages.reduce((obj, i) => (obj[i.getName()] = i, obj) ,{});
-
-    //Regexp searches for all img string positions with cid
+    const img_obj = allInlineImages.reduce((obj, i) => (obj[i.getName()] = i, obj), {});
     const imgexp = RegExp('<img.*?src="cid:(.*?)".*?alt="(.*?)"[^\>]+>', 'g');
     const matches = [...htmlBody.matchAll(imgexp)];
 
-    //Initiates the allInlineImages object
     const inlineImagesObj = {};
-    // built an inlineImagesObj from inline image matches
     matches.forEach(match => inlineImagesObj[match[1]] = img_obj[match[2]]);
 
-    return {message: {subject: subject_line, text: msg.getPlainBody(), html:htmlBody},
-            attachments: attachments, inlineImages: inlineImagesObj };
+    const template = {
+      message: {subject: subject_line, text: msg.getPlainBody(), html: htmlBody},
+      attachments: attachments,
+      inlineImages: inlineImagesObj
+    };
+
+    DRAFT_CACHE.setTemplate(subject_line, template);
+    return template;
   } catch(e) {
+    if (e.message === "Oops - can't find Gmail draft") throw e;
+    DRAFT_CACHE.setNotFound(subject_line);
     throw new Error("Oops - can't find Gmail draft");
   }
 
-  /**
-   * Filter draft objects with the matching subject linemessage by matching the subject line.
-   * @param {string} subject_line to search for draft message
-   * @return {object} GmailDraft object
-  */
   function subjectFilter_(subject_line){
     return function(element) {
       if (element.getMessage().getSubject() === subject_line) {
