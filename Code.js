@@ -489,6 +489,8 @@ function parsePlanData() {
   const documentIdIdx = headers.indexOf("Document ID");
   const sheetNameIdx = headers.indexOf("Sheet Name");
   const templateSourceIdx = headers.indexOf("Template Source");
+  const issueNameIdx = headers.indexOf("Issue Name");
+  const issueColumnIdx = headers.indexOf("Issue Column");
 
   if (emailTopicIdx === -1 || conditionColumnIdx === -1 || sentDateColumnIdx === -1) {
     throw new Error("Required headers are missing in the plan data.");
@@ -515,7 +517,9 @@ function parsePlanData() {
         sentColumn: row[sentDateColumnIdx],
         documentId: String(documentId),
         sheetName: String(sheetName),
-        templateSource: templateSourceIdx !== -1 ? String(row[templateSourceIdx] || "") : ""
+        templateSource: templateSourceIdx !== -1 ? String(row[templateSourceIdx] || "") : "",
+        issueName: issueNameIdx !== -1 ? String(row[issueNameIdx] || "").trim() : "",
+        issueColumn: issueColumnIdx !== -1 ? String(row[issueColumnIdx] || "").trim() : ""
       };
     });
 }
