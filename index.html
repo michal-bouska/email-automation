@@ -1,0 +1,246 @@
+<!DOCTYPE html>
+<html lang="cs">
+<head>
+  <base target="_top">
+  <meta charset="utf-8">
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
+      background: #f4f5f7; color: #1d2733;
+      max-width: 640px; margin: 0 auto; padding: 16px;
+    }
+    h1 { font-size: 1.3rem; margin-bottom: 12px; }
+    select, input[type="search"], input[type="text"] {
+      width: 100%; padding: 10px 12px; font-size: 1rem;
+      border: 1px solid #c6ccd4; border-radius: 8px; background: #fff;
+      margin-bottom: 10px;
+    }
+    .stats {
+      display: flex; justify-content: space-between; align-items: center;
+      font-size: 0.85rem; color: #5b6570; margin-bottom: 8px;
+    }
+    .hideRow {
+      display: flex; align-items: center; gap: 8px;
+      font-size: 0.9rem; color: #3c4650; margin-bottom: 8px; cursor: pointer;
+    }
+    .hideRow input { width: 18px; height: 18px; }
+    .stats button {
+      border: 1px solid #c6ccd4; background: #fff; border-radius: 6px;
+      padding: 4px 10px; font-size: 0.85rem; cursor: pointer;
+    }
+    #list { list-style: none; }
+    #list li {
+      background: #fff; border: 1px solid #e1e5ea; border-radius: 8px;
+      margin-bottom: 6px;
+    }
+    #list label {
+      display: flex; align-items: center; gap: 12px;
+      padding: 10px 12px; cursor: pointer;
+    }
+    #list input[type="checkbox"] { width: 22px; height: 22px; flex: none; }
+    .who { flex: 1; min-width: 0; }
+    .who .name { font-weight: 600; }
+    .who .mail {
+      font-size: 0.8rem; color: #5b6570;
+      overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    }
+    .when { font-size: 0.75rem; color: #2e7d32; text-align: right; flex: none; }
+    li.issued { background: #edf7ee; border-color: #bfe3c2; }
+    .when.saving { color: #9aa3ad; font-style: italic; }
+    #message { padding: 10px 12px; border-radius: 8px; margin-bottom: 10px; display: none; }
+    #message.error { display: block; background: #fdecea; color: #b3261e; }
+    #message.info { display: block; background: #e8f0fe; color: #1a56b0; }
+  </style>
+</head>
+<body>
+  <h1>📦 Výdej</h1>
+  <div id="message"></div>
+  <select id="issuePoint" onchange="loadList()">
+    <option value="">— vyberte výdejové místo —</option>
+  </select>
+  <input type="text" id="operator" placeholder="Název výdejního místa (uloží se k času výdeje)" style="display:none">
+  <input type="search" id="search" placeholder="Hledat jméno nebo e-mail…" oninput="renderList()" style="display:none">
+  <label class="hideRow" id="hideRow" style="display:none">
+    <input type="checkbox" id="hideIssued" onchange="renderList()"> Nezobrazovat již vydané
+  </label>
+  <div class="stats" id="stats" style="display:none">
+    <span id="counts"></span>
+    <button onclick="fetchList(false)">🔄 Obnovit</button>
+  </div>
+  <ul id="list"></ul>
+
+  <script>
+    let items = [];
+
+    function showMessage(text, cls) {
+      const el = document.getElementById('message');
+      el.textContent = text || '';
+      el.className = text ? cls : '';
+    }
+
+    function loadPoints() {
+      showMessage('Načítám výdejová místa…', 'info');
+      google.script.run
+        .withSuccessHandler(points => {
+          const select = document.getElementById('issuePoint');
+          points.forEach(name => {
+            const opt = document.createElement('option');
+            opt.value = name;
+            opt.textContent = name;
+            select.appendChild(opt);
+          });
+          showMessage(points.length ? '' : 'V plánu nejsou definována žádná výdejová místa (sloupce "Issue Name" a "Issue Column").', 'info');
+        })
+        .withFailureHandler(err => showMessage(err.message, 'error'))
+        .getIssuePoints();
+    }
+
+    let pendingSaves = 0;
+    let loadGeneration = 0;
+
+    function loadList() {
+      const issueName = document.getElementById('issuePoint').value;
+      items = [];
+      renderList();
+      if (!issueName) {
+        loadGeneration++;
+        document.getElementById('operator').style.display = 'none';
+        document.getElementById('search').style.display = 'none';
+        document.getElementById('hideRow').style.display = 'none';
+        document.getElementById('stats').style.display = 'none';
+        return;
+      }
+      fetchList(false);
+    }
+
+    /**
+     * Loads the list from the server. Silent mode (background polling)
+     * shows no loading message and never applies stale responses.
+     */
+    function fetchList(silent) {
+      const issueName = document.getElementById('issuePoint').value;
+      if (!issueName) return;
+      const generation = ++loadGeneration;
+      if (!silent) showMessage('Načítám seznam…', 'info');
+      google.script.run
+        .withSuccessHandler(result => {
+          // Ignore responses for a previously selected issue point and do not
+          // overwrite rows while a save is still in flight.
+          if (generation !== loadGeneration || pendingSaves > 0) return;
+          items = result.items;
+          document.getElementById('operator').style.display = '';
+          document.getElementById('search').style.display = '';
+          document.getElementById('hideRow').style.display = 'flex';
+          document.getElementById('stats').style.display = 'flex';
+          if (!silent) showMessage('');
+          renderList();
+        })
+        .withFailureHandler(err => { if (!silent) showMessage(err.message, 'error'); })
+        .getIssueList(issueName);
+    }
+
+    function renderList() {
+      const query = document.getElementById('search').value.trim().toLowerCase();
+      const list = document.getElementById('list');
+      list.innerHTML = '';
+
+      const hideIssued = document.getElementById('hideIssued').checked;
+
+      const visible = items.filter(item =>
+        (!hideIssued || !item.issued || item.saving) &&
+        (!query || item.name.toLowerCase().includes(query) || item.recipient.toLowerCase().includes(query)));
+
+      visible.forEach(item => {
+        const li = document.createElement('li');
+        li.className = item.issued ? 'issued' : '';
+
+        const label = document.createElement('label');
+
+        const checkbox = document.createElement('input');
+        checkbox.type = 'checkbox';
+        checkbox.checked = !!item.issued;
+        checkbox.onchange = () => toggleIssued(item, checkbox.checked, li);
+
+        const who = document.createElement('div');
+        who.className = 'who';
+        const name = document.createElement('div');
+        name.className = 'name';
+        name.textContent = item.name || item.recipient;
+        who.appendChild(name);
+        if (item.name && item.recipient) {
+          const mail = document.createElement('div');
+          mail.className = 'mail';
+          mail.textContent = item.recipient;
+          who.appendChild(mail);
+        }
+
+        const when = document.createElement('div');
+        when.className = 'when' + (item.saving ? ' saving' : '');
+        when.textContent = item.saving ? 'ukládám…' : item.issued;
+
+        label.appendChild(checkbox);
+        label.appendChild(who);
+        label.appendChild(when);
+        li.appendChild(label);
+        list.appendChild(li);
+      });
+
+      const issuedCount = items.filter(i => i.issued).length;
+      document.getElementById('counts').textContent =
+        `Vydáno ${issuedCount} z ${items.length}`
+        + (query || hideIssued ? ` (zobrazeno ${visible.length})` : '');
+    }
+
+    function toggleIssued(item, issued, li) {
+      const issueName = document.getElementById('issuePoint').value;
+      const operator = document.getElementById('operator').value.trim();
+
+      // Optimistic UI: reflect the change immediately, reconcile with the
+      // server response, revert on failure.
+      const previous = item.issued;
+      item.issued = issued ? '…' : '';
+      item.saving = true;
+      pendingSaves++;
+      renderList();
+
+      google.script.run
+        .withSuccessHandler(result => {
+          item.issued = result.issued;
+          item.saving = false;
+          pendingSaves--;
+          if (result.conflict) {
+            showMessage(`⚠️ ${item.name || item.recipient}: už bylo vydáno (${result.issued}).`, 'error');
+          }
+          renderList();
+        })
+        .withFailureHandler(err => {
+          item.issued = previous;
+          item.saving = false;
+          pendingSaves--;
+          showMessage(err.message, 'error');
+          renderList();
+        })
+        .markIssued(issueName, item.rowNumber, item.recipient, issued, operator);
+    }
+
+    // Background sync: poll every 25 s and refresh when the tab regains
+    // focus, so issues made at other desks show up on their own.
+    setInterval(() => {
+      if (document.visibilityState === 'visible' && pendingSaves === 0) fetchList(true);
+    }, 25000);
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'visible') fetchList(true);
+    });
+
+    // Issue desk name survives page reloads on this device.
+    const operatorInput = document.getElementById('operator');
+    try { operatorInput.value = localStorage.getItem('issueOperator') || ''; } catch (e) {}
+    operatorInput.oninput = () => {
+      try { localStorage.setItem('issueOperator', operatorInput.value); } catch (e) {}
+    };
+
+    loadPoints();
+  </script>
+</body>
+</html>

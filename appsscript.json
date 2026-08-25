@@ -1,5 +1,9 @@
 {
   "timeZone": "Europe/Prague",
+  "webapp": {
+    "executeAs": "USER_DEPLOYING",
+    "access": "ANYONE"
+  },
   "dependencies": {
   },
   "exceptionLogging": "STACKDRIVER",
