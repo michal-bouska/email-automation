@@ -1,0 +1,8 @@
+# Push only the main project files
+**/**
+!appsscript.json
+!Code.js
+!FioParser.js
+!Utils.js
+!WebApp.js
+!index.html
