@@ -271,6 +271,6 @@ function runUpdate() {
 }
 
 function runUpdateMonitored() {
-  withHealthcheck_(runUpdate)();
+  withHealthcheck_(runUpdate, 'HEALTHCHECKS_PING_URL_FIO')();
 }
 
