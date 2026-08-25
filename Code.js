@@ -511,6 +511,14 @@ function processEmails() {
   const planData = parsePlanData();
   const realizationCache = {};
 
+  // Collects all per-campaign and per-recipient errors; reported to the
+  // HEALTHCHECKS_PING_URL_WARNING check at the end of the run.
+  const runErrors = [];
+  const reportRunError = (message) => {
+    console.error(message);
+    runErrors.push(message);
+  };
+
   planData.forEach(plan => {
     const cacheKey = `${plan.documentId}|${plan.sheetName}`;
 
@@ -522,7 +530,7 @@ function processEmails() {
         realizationDoc = loadRealizationDocument(plan.documentId, plan.sheetName);
         realizationCache[cacheKey] = realizationDoc;
       } catch (error) {
-        console.error(`Failed to load realization document for topic "${plan.emailTopic}": ${error.message}`);
+        reportRunError(`Failed to load realization document for topic "${plan.emailTopic}": ${error.message}`);
         return;
       }
     }
@@ -531,7 +539,7 @@ function processEmails() {
 
     const recipientIdx = realizationHeaders.indexOf(RECIPIENT_COL);
     if (recipientIdx === -1) {
-      console.error(`Recipient column (${RECIPIENT_COL}) not found in document ${plan.documentId}, sheet ${plan.sheetName}.`);
+      reportRunError(`Recipient column (${RECIPIENT_COL}) not found in document ${plan.documentId}, sheet ${plan.sheetName}.`);
       return;
     }
 
@@ -539,7 +547,7 @@ function processEmails() {
     const sentColIdx = realizationHeaders.indexOf(plan.sentColumn);
 
     if (conditionColIdx === -1 || sentColIdx === -1) {
-      console.error(`Columns "${plan.conditionColumn}" or "${plan.sentColumn}" not found in document ${plan.documentId}, sheet ${plan.sheetName}.`);
+      reportRunError(`Columns "${plan.conditionColumn}" or "${plan.sentColumn}" not found in document ${plan.documentId}, sheet ${plan.sheetName}.`);
       return;
     }
 
@@ -563,7 +571,7 @@ function processEmails() {
       try {
         emailTemplate = getEmailTemplate_(plan);
       } catch (error) {
-        console.error(`Failed to get template for ${recipient}: ${error.message}`);
+        reportRunError(`Failed to get template for ${recipient}: ${error.message}`);
         writeSentStatus(`${error.message} at ${new Date().toISOString()}`);
         return;
       }
@@ -574,7 +582,7 @@ function processEmails() {
           return map;
         }, {});
       } catch (error) {
-        console.error(`Failed to parse realization for ${recipient}: ${error.message}`);
+        reportRunError(`Failed to parse realization for ${recipient}: ${error.message}`);
         writeSentStatus(`${error.message} at ${new Date().toISOString()}`);
         return;
       }
@@ -587,7 +595,7 @@ function processEmails() {
           });
         }
       } catch (error) {
-        console.error(`Failed to generate QR code for ${recipient}: ${error.message}`);
+        reportRunError(`Failed to generate QR code for ${recipient}: ${error.message}`);
         writeSentStatus(`${error.message} at ${new Date().toISOString()}`);
         return;
       }
@@ -600,7 +608,7 @@ function processEmails() {
           sentValue
         });
       } catch (error) {
-        console.error(`Failed to fill template for ${recipient}: ${error.message}`);
+        reportRunError(`Failed to fill template for ${recipient}: ${error.message}`);
         writeSentStatus(`${error.message} at ${new Date().toISOString()}`);
         return;
       }
@@ -616,7 +624,7 @@ function processEmails() {
           });
         }
       } catch (error) {
-        console.error(`Failed to inline images for ${recipient}: ${error.message}`);
+        reportRunError(`Failed to inline images for ${recipient}: ${error.message}`);
         writeSentStatus(`${error.message} at ${new Date().toISOString()}`);
         return;
       }
@@ -632,11 +640,19 @@ function processEmails() {
         range.setValue(new Date().toISOString());
         range.setNumberFormat("dd.MM.yyyy HH:mm:ss");
       } catch (error) {
-        console.error(`Failed to send email to ${recipient}: ${error.message}`);
+        reportRunError(`Failed to send email to ${recipient}: ${error.message}`);
         writeSentStatus(`${error.message} at ${new Date().toISOString()}`);
       }
     });
   });
+
+  // Warning check: fails when any single campaign or email failed, even
+  // though the run itself finished. Success ping keeps the check alive.
+  if (runErrors.length > 0) {
+    pingHealthcheck_('/fail', `${runErrors.length} error(s) during run:\n\n${runErrors.join('\n')}`, 'HEALTHCHECKS_PING_URL_WARNING');
+  } else {
+    pingHealthcheck_('', null, 'HEALTHCHECKS_PING_URL_WARNING');
+  }
 }
 
 
