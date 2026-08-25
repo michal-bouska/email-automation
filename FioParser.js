@@ -35,7 +35,7 @@ const VARIABLE_SYMBOL_KEY = '72405';
  */
 function getLastTransactions() {
     // Format the API URL for last transactions endpoint
-    const url = `https://www.fio.cz/ib_api/rest/last/${getFioToken()}/transactions.json`;
+    const url = `https://fioapi.fio.cz/v1/rest/last/${getFioToken()}/transactions.json`;
     Logger.log("URL: " + url)
 
     let response_value;
