@@ -76,7 +76,11 @@ const DRAFT_CACHE = (() => {
   return {
     getDrafts() {
       if (drafts === null) {
+        console.log("Gmail API call: GmailApp.getDrafts() - fetching all drafts.");
         drafts = GmailApp.getDrafts();
+        console.log(`Gmail API call finished: fetched ${drafts.length} drafts.`);
+      } else {
+        console.log("Using cached Gmail drafts (no API call).");
       }
       return drafts;
     },
@@ -102,18 +106,24 @@ const DRAFT_CACHE = (() => {
 
 function getGmailTemplateFromDrafts_(subject_line){
   const cached = DRAFT_CACHE.getTemplate(subject_line);
-  if (cached) return cached;
+  if (cached) {
+    console.log(`Draft template for subject "${subject_line}" served from cache.`);
+    return cached;
+  }
   if (cached === null) throw new Error("Oops - can't find Gmail draft");
 
   try {
+    console.log(`Looking up Gmail draft with subject "${subject_line}".`);
     const drafts = DRAFT_CACHE.getDrafts();
     const draft = drafts.filter(subjectFilter_(subject_line))[0];
 
     if (!draft) {
+      console.log(`Gmail draft with subject "${subject_line}" not found.`);
       DRAFT_CACHE.setNotFound(subject_line);
       throw new Error("Oops - can't find Gmail draft");
     }
 
+    console.log(`Gmail API call: loading draft message and attachments for subject "${subject_line}".`);
     const msg = draft.getMessage();
 
     // Handles inline images and attachments so they can be included in the merge
@@ -135,6 +145,7 @@ function getGmailTemplateFromDrafts_(subject_line){
       inlineImages: inlineImagesObj
     };
 
+    console.log(`Draft template for subject "${subject_line}" processed and cached.`);
     DRAFT_CACHE.setTemplate(subject_line, template);
     return template;
   } catch(e) {
