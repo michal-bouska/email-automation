@@ -1,14 +1,4 @@
 /**
- * Creates a custom menu in the Google Sheet when it is opened.
- */
-function onOpen() {
-  SpreadsheetApp.getUi()
-      .createMenu('Fio Sync')
-      .addItem('Načíst nové platby', 'runUpdate')
-      .addToUi();
-}
-
-/**
  * Fetch transactions from Fio Bank API using Google Apps Script
  * This script connects to Fio Bank API and retrieves account transactions since the last fetch
  * with additional parsing for specific transaction keys in recipient notes
@@ -245,22 +235,17 @@ function writeTransactionsToSheet() {
 }
 
 /**
- * Create a trigger to automatically run the target function every 5 minutes
+ * Installs the time-based trigger for fio updates (independent of the mail trigger).
  */
-function createFiveMinuteTrigger() {
-    // Delete any existing triggers with the same function name
-    const triggers = ScriptApp.getProjectTriggers();
-    for (let i = 0; i < triggers.length; i++) {
-        if (triggers[i].getHandlerFunction() === 'runUpdateMonitored') {
-            ScriptApp.deleteTrigger(triggers[i]);
-        }
-    }
+function createFioTrigger() {
+    ensureTimeTrigger_('runUpdateMonitored', 5);
+}
 
-    // Create a new trigger to run every 5 minutes
-    ScriptApp.newTrigger('runUpdateMonitored')
-        .timeBased()
-        .everyMinutes(5) // Run every 5 minutes
-        .create();
+/**
+ * Removes the time-based trigger for fio updates.
+ */
+function deleteFioTrigger() {
+    deleteTimeTriggers_('runUpdateMonitored');
 }
 
 /**

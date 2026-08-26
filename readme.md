@@ -16,6 +16,16 @@ This project allows sending emails based on rules defined within Google Sheets. 
 2. Use the Google Sheets template.
 3. Set up your Google Apps Script environment. 
 4. Set the `FIO_API_TOKEN` variable in Script Properties to the token value from the Fio API.  
+5. Optionally set `REALIZATION_DOCUMENT_ID` in Script Properties to the ID of the spreadsheet holding the realization sheets (defaults to the active spreadsheet). All realization sheets live in this single document; the plan selects them by the `Sheet Name` column.
+
+## Triggers
+
+Mail sending and fio synchronization run on independent time-based triggers:
+
+- `createMailTrigger()` / `deleteMailTrigger()` — hourly trigger for `processEmailsMonitored`.
+- `createFioTrigger()` / `deleteFioTrigger()` — 5-minute trigger for `runUpdateMonitored`.
+
+Run the create functions once from the Apps Script editor; each can be installed or removed without affecting the other.
 
 ## Usage
 

@@ -124,6 +124,38 @@ function formatIBAN(iban) {
 // console.log(iban1); // Prints: CZ65 0800 0000 1900 1234 5678
 
 /**
+ * Deletes all project triggers bound to the given handler function.
+ * @param {string} handlerName Name of the trigger handler function.
+ */
+function deleteTimeTriggers_(handlerName) {
+    ScriptApp.getProjectTriggers()
+        .filter(trigger => trigger.getHandlerFunction() === handlerName)
+        .forEach(trigger => ScriptApp.deleteTrigger(trigger));
+}
+
+/**
+ * Creates (or replaces) a time-based trigger for the given handler function.
+ * Triggers are independent per handler, so the mail and fio triggers can
+ * be installed and removed separately without affecting each other.
+ * @param {string} handlerName Name of the function the trigger should run.
+ * @param {number} minutes Interval; values >= 60 use everyHours, smaller
+ *                         values must be 1, 5, 10, 15 or 30 (Apps Script limit).
+ */
+function ensureTimeTrigger_(handlerName, minutes) {
+    deleteTimeTriggers_(handlerName);
+
+    const builder = ScriptApp.newTrigger(handlerName).timeBased();
+    if (minutes >= 60) {
+        builder.everyHours(Math.round(minutes / 60));
+    } else {
+        builder.everyMinutes(minutes);
+    }
+    builder.create();
+
+    console.log(`Trigger for ${handlerName} created (every ${minutes} minutes).`);
+}
+
+/**
  * Sends a ping to Healthchecks.io. Failures are logged but never block execution.
  * @param {string} suffix URL suffix: "" for success, "/start" for start, "/fail" for failure.
  * @param {string} body Optional POST body (error details on /fail).

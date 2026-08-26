@@ -10,13 +10,32 @@ function myFunction() {
 }
 
 /**
- * Creates the menu item "Mail Merge" for user to run scripts on drop-down.
+ * Creates the "Mail Merge" and "Fio Sync" menus for user to run scripts
+ * on drop-down. Single onOpen for the whole project (a second onOpen in
+ * another file would silently override this one).
  */
 function onOpen() {
     const ui = SpreadsheetApp.getUi();
     ui.createMenu('Mail Merge')
         .addItem('Send Emails', 'myFunction')
         .addToUi();
+    ui.createMenu('Fio Sync')
+        .addItem('Načíst nové platby', 'runUpdate')
+        .addToUi();
+}
+
+/**
+ * Installs the time-based trigger for sending emails (independent of the fio trigger).
+ */
+function createMailTrigger() {
+    ensureTimeTrigger_('processEmailsMonitored', 60);
+}
+
+/**
+ * Removes the time-based trigger for sending emails.
+ */
+function deleteMailTrigger() {
+    deleteTimeTriggers_('processEmailsMonitored');
 }
 
 /**
