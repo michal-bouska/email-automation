@@ -1,4 +1,4 @@
-const MAIL_CONFIG = loadConfig([["RECIPIENT_COL", "Recipient"], ["EMAIL_PLAN_SHEET", "plan"], ["EMAIL_LOG_SHEET", "realizace"], ["SENDER_EMAIL", null], ["CC_EMAIL", ""], ["SENDER_NAME", null]]);
+const MAIL_CONFIG = loadConfig([["RECIPIENT_COL", "Recipient"], ["EMAIL_PLAN_SHEET", "plan"], ["EMAIL_LOG_SHEET", "realizace"], ["REALIZATION_DOCUMENT_ID", null], ["SENDER_EMAIL", null], ["CC_EMAIL", ""], ["SENDER_NAME", null]]);
 
 function processEmailsMonitored() {
   withHealthcheck_(processEmails)();
@@ -406,6 +406,20 @@ const SPREADSHEET_CACHE = (() => {
 })();
 
 /**
+ * Returns the single realization spreadsheet. All realization sheets live
+ * in this one document; multiple realization documents are not supported.
+ * Configured via Script Property "REALIZATION_DOCUMENT_ID"; falls back to
+ * the active spreadsheet when not set.
+ * @return {Spreadsheet} The realization spreadsheet.
+ */
+function getRealizationSpreadsheet_() {
+  if (MAIL_CONFIG.REALIZATION_DOCUMENT_ID) {
+    return SPREADSHEET_CACHE.get(MAIL_CONFIG.REALIZATION_DOCUMENT_ID);
+  }
+  return SpreadsheetApp.getActiveSpreadsheet();
+}
+
+/**
  * Parses QR code sheet data into objects mapped by Email Topic.
  * Rows with an empty EmailTopic are global QR codes, available to all
  * email topics under the special "GLOBAL" key.
@@ -449,17 +463,16 @@ function parseQrCodeData(qrCodeData) {
 }
 
 /**
- * Loads realization data and QR code data from an external spreadsheet.
- * @param {string} documentId The Google Spreadsheet ID.
+ * Loads realization data and QR code data from the realization spreadsheet.
  * @param {string} sheetName The sheet tab name containing realization data.
  * @return {object} { headers, data, qrCodes, sheet }
  */
-function loadRealizationDocument(documentId, sheetName) {
-  const spreadsheet = SPREADSHEET_CACHE.get(documentId);
+function loadRealizationSheet(sheetName) {
+  const spreadsheet = getRealizationSpreadsheet_();
 
   const realizationSheet = spreadsheet.getSheetByName(sheetName);
   if (!realizationSheet) {
-    throw new Error(`Sheet "${sheetName}" not found in document ${documentId}.`);
+    throw new Error(`Sheet "${sheetName}" not found in the realization document.`);
   }
 
   const realizationRaw = realizationSheet.getDataRange().getValues();
@@ -477,7 +490,7 @@ function loadRealizationDocument(documentId, sheetName) {
 
 /**
  * Transforms plan data into objects with validation.
- * Plan sheet columns: Email Topic, Column Condition To Send, Column Sent, Document ID, Sheet Name.
+ * Plan sheet columns: Email Topic, Column Condition To Send, Column Sent, Sheet Name.
  * @returns {Array<Object>} Array of parsed plan objects.
  */
 function parsePlanData() {
@@ -490,7 +503,6 @@ function parsePlanData() {
   const emailTopicIdx = headers.indexOf("Email Topic");
   const conditionColumnIdx = headers.indexOf("Column Condition To Send");
   const sentDateColumnIdx = headers.indexOf("Column Sent");
-  const documentIdIdx = headers.indexOf("Document ID");
   const sheetNameIdx = headers.indexOf("Sheet Name");
   const templateSourceIdx = headers.indexOf("Template Source");
   const issueNameIdx = headers.indexOf("Issue Name");
@@ -505,27 +517,19 @@ function parsePlanData() {
   if (emailTopicIdx === -1 || conditionColumnIdx === -1 || sentDateColumnIdx === -1) {
     throw new Error("Required headers are missing in the plan data.");
   }
-  if (documentIdIdx === -1 || sheetNameIdx === -1) {
-    throw new Error("Document ID and Sheet Name columns are required in the plan data.");
-  }
 
   return planData.slice(1)
     .filter(row => row[emailTopicIdx])
     .map(row => {
-      const documentId = row[documentIdIdx];
-      const sheetName = row[sheetNameIdx];
-
-      if (!documentId || !sheetName) {
-        throw new Error(
-          `Plan row for topic "${row[emailTopicIdx]}" is missing Document ID or Sheet Name.`
-        );
-      }
+      // Realization sheet name with fallback to the MAIL_CONFIG default
+      const sheetName = sheetNameIdx !== -1 && row[sheetNameIdx]
+        ? row[sheetNameIdx]
+        : MAIL_CONFIG.EMAIL_LOG_SHEET;
 
       return {
         emailTopic: row[emailTopicIdx],
         conditionColumn: row[conditionColumnIdx],
         sentColumn: row[sentDateColumnIdx],
-        documentId: String(documentId),
         sheetName: String(sheetName),
         templateSource: templateSourceIdx !== -1 ? String(row[templateSourceIdx] || "") : "",
         issueName: issueNameIdx !== -1 ? String(row[issueNameIdx] || "").trim() : "",
@@ -568,17 +572,17 @@ function processEmails() {
   };
 
   planData.forEach(plan => {
-    const cacheKey = `${plan.documentId}|${plan.sheetName}`;
+    const cacheKey = plan.sheetName;
 
     let realizationDoc;
     if (realizationCache[cacheKey]) {
       realizationDoc = realizationCache[cacheKey];
     } else {
       try {
-        realizationDoc = loadRealizationDocument(plan.documentId, plan.sheetName);
+        realizationDoc = loadRealizationSheet(plan.sheetName);
         realizationCache[cacheKey] = realizationDoc;
       } catch (error) {
-        reportRunError(`Failed to load realization document for topic "${plan.emailTopic}": ${error.message}`);
+        reportRunError(`Failed to load realization sheet for topic "${plan.emailTopic}": ${error.message}`);
         return;
       }
     }
@@ -587,7 +591,7 @@ function processEmails() {
 
     const recipientIdx = realizationHeaders.indexOf(MAIL_CONFIG.RECIPIENT_COL);
     if (recipientIdx === -1) {
-      reportRunError(`Recipient column (${MAIL_CONFIG.RECIPIENT_COL}) not found in document ${plan.documentId}, sheet ${plan.sheetName}.`);
+      reportRunError(`Recipient column (${MAIL_CONFIG.RECIPIENT_COL}) not found in sheet ${plan.sheetName}.`);
       return;
     }
 
@@ -595,7 +599,7 @@ function processEmails() {
     const sentColIdx = realizationHeaders.indexOf(plan.sentColumn);
 
     if (conditionColIdx === -1 || sentColIdx === -1) {
-      reportRunError(`Columns "${plan.conditionColumn}" or "${plan.sentColumn}" not found in document ${plan.documentId}, sheet ${plan.sheetName}.`);
+      reportRunError(`Columns "${plan.conditionColumn}" or "${plan.sentColumn}" not found in sheet ${plan.sheetName}.`);
       return;
     }
 

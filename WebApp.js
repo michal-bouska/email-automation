@@ -47,8 +47,8 @@ function findIssuePlan_(issueName) {
 function getIssueList(issueName) {
   const plan = findIssuePlan_(issueName);
 
-  // Lightweight load: unlike loadRealizationDocument, skips the QRCodes sheet.
-  const sheet = SPREADSHEET_CACHE.get(plan.documentId).getSheetByName(plan.sheetName);
+  // Lightweight load: unlike loadRealizationSheet, skips the QRCodes sheet.
+  const sheet = getRealizationSpreadsheet_().getSheetByName(plan.sheetName);
   if (!sheet) {
     throw new Error(`List "${plan.sheetName}" nebyl nalezen.`);
   }
@@ -95,7 +95,7 @@ function markIssued(issueName, rowNumber, recipientCheck, issued, operator) {
   const lock = LockService.getScriptLock();
   lock.waitLock(10000);
   try {
-    const sheet = SPREADSHEET_CACHE.get(plan.documentId).getSheetByName(plan.sheetName);
+    const sheet = getRealizationSpreadsheet_().getSheetByName(plan.sheetName);
     if (!sheet) {
       throw new Error(`List "${plan.sheetName}" nebyl nalezen.`);
     }
