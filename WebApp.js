@@ -61,7 +61,7 @@ function getIssueList(issueName) {
     throw new Error(`Sloupec "${plan.issueColumn}" nebyl nalezen v listu "${plan.sheetName}".`);
   }
 
-  const recipientIdx = headers.indexOf(RECIPIENT_COL);
+  const recipientIdx = headers.indexOf(MAIL_CONFIG.RECIPIENT_COL);
   const firstNameIdx = headers.indexOf("First name");
   const lastNameIdx = headers.indexOf("Last name");
 
@@ -106,7 +106,7 @@ function markIssued(issueName, rowNumber, recipientCheck, issued, operator) {
       throw new Error(`Sloupec "${plan.issueColumn}" nebyl nalezen v listu "${plan.sheetName}".`);
     }
 
-    const recipientIdx = headers.indexOf(RECIPIENT_COL);
+    const recipientIdx = headers.indexOf(MAIL_CONFIG.RECIPIENT_COL);
     if (recipientIdx !== -1 && recipientCheck) {
       const actual = String(sheet.getRange(rowNumber, recipientIdx + 1).getValue() || "");
       if (actual !== recipientCheck) {

@@ -1,8 +1,5 @@
 const MAIL_CONFIG = loadConfig([["RECIPIENT_COL", "Recipient"], ["EMAIL_PLAN_SHEET", "plan"], ["EMAIL_LOG_SHEET", "realizace"], ["SENDER_EMAIL", null], ["CC_EMAIL", ""], ["SENDER_NAME", null]]);
 
-const RECIPIENT_COL  = "Recipient";
-const EMAIL_SENT_COL = "Email Sent";
-
 function processEmailsMonitored() {
   withHealthcheck_(processEmails)();
 }
@@ -389,7 +386,7 @@ function consolidateQrCodeData(qrCodeObj, recipientRow, realizationHeaders) {
  */
 const PLAN_DATA = (() => {
   const spreadsheet = SpreadsheetApp.getActiveSpreadsheet();
-  const planSheet = spreadsheet.getSheetByName("plan");
+  const planSheet = spreadsheet.getSheetByName(MAIL_CONFIG.EMAIL_PLAN_SHEET);
   return planSheet ? planSheet.getDataRange().getValues() : [];
 })();
 
@@ -410,6 +407,8 @@ const SPREADSHEET_CACHE = (() => {
 
 /**
  * Parses QR code sheet data into objects mapped by Email Topic.
+ * Rows with an empty EmailTopic are global QR codes, available to all
+ * email topics under the special "GLOBAL" key.
  * @param {any[][]} qrCodeData Raw 2D array from the QRCodes sheet (including header row).
  * @return {object} Map of emailTopic -> Array of qrCodeObj.
  */
@@ -427,18 +426,23 @@ function parseQrCodeData(qrCodeData) {
       bankCode: row[qrCodeHeaders.indexOf("BankCode")],
       currency: row[qrCodeHeaders.indexOf("Currency")],
       amount: row[qrCodeHeaders.indexOf("Amount")],
+      amountColumn: row[qrCodeHeaders.indexOf("AmountColumn")],
       variableSymbol: row[qrCodeHeaders.indexOf("VariableSymbol")],
       variableSymbolColumn: row[qrCodeHeaders.indexOf("VariableSymbolColumn")],
       message: row[qrCodeHeaders.indexOf("Message")],
+      messageColumn: row[qrCodeHeaders.indexOf("MessageColumn")],
       size: row[qrCodeHeaders.indexOf("Size")]
     };
 
-    if (qrCodeObj.emailTopic) {
-      if (!map[qrCodeObj.emailTopic]) {
-        map[qrCodeObj.emailTopic] = [];
-      }
-      map[qrCodeObj.emailTopic].push(qrCodeObj);
+    if (!qrCodeObj.imageName) {
+      return map;
     }
+
+    const key = qrCodeObj.emailTopic || "GLOBAL";
+    if (!map[key]) {
+      map[key] = [];
+    }
+    map[key].push(qrCodeObj);
 
     return map;
   }, {});
@@ -492,6 +496,12 @@ function parsePlanData() {
   const issueNameIdx = headers.indexOf("Issue Name");
   const issueColumnIdx = headers.indexOf("Issue Column");
 
+  // Optional email configuration columns, with fallback to MAIL_CONFIG defaults
+  const senderEmailIdx = headers.indexOf("Sender Email");
+  const ccIdx = headers.indexOf("CC");
+  const bccIdx = headers.indexOf("BCC");
+  const senderNameIdx = headers.indexOf("Sender Name");
+
   if (emailTopicIdx === -1 || conditionColumnIdx === -1 || sentDateColumnIdx === -1) {
     throw new Error("Required headers are missing in the plan data.");
   }
@@ -519,7 +529,11 @@ function parsePlanData() {
         sheetName: String(sheetName),
         templateSource: templateSourceIdx !== -1 ? String(row[templateSourceIdx] || "") : "",
         issueName: issueNameIdx !== -1 ? String(row[issueNameIdx] || "").trim() : "",
-        issueColumn: issueColumnIdx !== -1 ? String(row[issueColumnIdx] || "").trim() : ""
+        issueColumn: issueColumnIdx !== -1 ? String(row[issueColumnIdx] || "").trim() : "",
+        senderEmail: senderEmailIdx !== -1 && row[senderEmailIdx] ? row[senderEmailIdx] : MAIL_CONFIG.SENDER_EMAIL,
+        cc: ccIdx !== -1 && row[ccIdx] ? row[ccIdx] : MAIL_CONFIG.CC_EMAIL,
+        bcc: bccIdx !== -1 && row[bccIdx] ? row[bccIdx] : null,
+        senderName: senderNameIdx !== -1 && row[senderNameIdx] ? row[senderNameIdx] : MAIL_CONFIG.SENDER_NAME
       };
     });
 }
@@ -571,9 +585,9 @@ function processEmails() {
 
     const { headers: realizationHeaders, data: realizationData, qrCodes, sheet: realizationSheet } = realizationDoc;
 
-    const recipientIdx = realizationHeaders.indexOf(RECIPIENT_COL);
+    const recipientIdx = realizationHeaders.indexOf(MAIL_CONFIG.RECIPIENT_COL);
     if (recipientIdx === -1) {
-      reportRunError(`Recipient column (${RECIPIENT_COL}) not found in document ${plan.documentId}, sheet ${plan.sheetName}.`);
+      reportRunError(`Recipient column (${MAIL_CONFIG.RECIPIENT_COL}) not found in document ${plan.documentId}, sheet ${plan.sheetName}.`);
       return;
     }
 
@@ -590,7 +604,8 @@ function processEmails() {
       const conditionValue = recipientRow[conditionColIdx];
       const sentValue = recipientRow[sentColIdx];
 
-      if (conditionValue !== 1 || sentValue !== "") {
+      // conditionValue 2 forces a resend even when the sent value is already set
+      if (!((conditionValue === 1 && sentValue === "") || conditionValue === 2)) {
         return;
       }
 
@@ -621,18 +636,12 @@ function processEmails() {
         return;
       }
 
-      try {
-        if (qrCodes[plan.emailTopic]) {
-          qrCodes[plan.emailTopic].forEach(qrCodeObj => {
-            consolidateQrCodeData(qrCodeObj, [recipientRow], realizationHeaders);
-            dataMapping[qrCodeObj.imageName] = `<img src="cid:${qrCodeObj.imageName}" alt="QR Code">`;
-          });
-        }
-      } catch (error) {
-        reportRunError(`Failed to generate QR code for ${recipient}: ${error.message}`);
-        writeSentStatus(`${error.message} at ${new Date().toISOString()}`);
-        return;
-      }
+      // QR codes available to this email: topic-specific plus global ones
+      const qrCodesForTopic = [...(qrCodes[plan.emailTopic] || []), ...(qrCodes["GLOBAL"] || [])];
+
+      qrCodesForTopic.forEach(qrCodeObj => {
+        dataMapping[qrCodeObj.imageName] = `<img src="cid:${qrCodeObj.imageName}" alt="QR Code">`;
+      });
 
       try {
         msgObj = fillInTemplateFromObject_(emailTemplate.message, {
@@ -651,12 +660,13 @@ function processEmails() {
         attachments = emailTemplate.attachments || [];
         inlineImages = emailTemplate.inlineImages || {};
 
-        if (qrCodes[plan.emailTopic]) {
-          qrCodes[plan.emailTopic].forEach(qrCodeObj => {
-            const consolidated = consolidateQrCodeData(qrCodeObj, [recipientRow], realizationHeaders);
+        qrCodesForTopic.forEach(qrCodeObj => {
+          // Only generate and insert QR codes that are actually used in the email
+          if (emailTemplate.message.html.includes(`{{${qrCodeObj.imageName}}}`)) {
+            const consolidated = consolidateQrCodeData(qrCodeObj, recipientRow, realizationHeaders);
             msgObj.html = insertQrCodesIntoEmail(msgObj.html, inlineImages, consolidated);
-          });
-        }
+          }
+        });
       } catch (error) {
         reportRunError(`Failed to inline images for ${recipient}: ${error.message}`);
         writeSentStatus(`${error.message} at ${new Date().toISOString()}`);
@@ -665,6 +675,10 @@ function processEmails() {
 
       try {
         GmailApp.sendEmail(recipient, msgObj.subject, msgObj.text, {
+          from: plan.senderEmail,
+          cc: plan.cc,
+          bcc: plan.bcc,
+          name: plan.senderName,
           htmlBody: msgObj.html,
           attachments: attachments,
           inlineImages: inlineImages
@@ -689,180 +703,3 @@ function processEmails() {
   }
 }
 
-function processEmailsWithParams(planData, sheetsData, realizationSheetName) {
-    // Get realization data from the specified sheet
-    const realizationSheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(realizationSheetName);
-    const realizationData = realizationSheet ? realizationSheet.getDataRange().getValues().slice(1) : []; // Skip headers
-    const realizationHeaders = realizationSheet ? realizationSheet.getDataRange().getValues()[0] : []; // Get headers
-
-    const recipientIdx = realizationHeaders.indexOf(MAIL_CONFIG.RECIPIENT_COL);
-    if (recipientIdx === -1) {
-        throw new Error(`Recipient column (${MAIL_CONFIG.RECIPIENT_COL}) not found in realization data.`);
-    }
-
-    realizationData.forEach((recipientRow, recipientIndex) => {
-        const recipient = recipientRow[recipientIdx];
-
-        planData.forEach(plan => {
-            const conditionColIdx = realizationHeaders.indexOf(plan.conditionColumn);
-            const sentColIdx = realizationHeaders.indexOf(plan.sentColumn);
-
-            if (conditionColIdx === -1 || sentColIdx === -1) {
-                throw new Error(`Columns ${plan.conditionColumn} or ${plan.sentColumn} not found in realization data.`);
-            }
-
-            const conditionValue = recipientRow[conditionColIdx];
-            const sentValue = recipientRow[sentColIdx];
-
-            console.log(
-                `Parsed recipient row ${recipientIndex + 2}: ` +
-                `Recipient = ${recipient}, Condition Value = ${conditionValue}, Sent Value = ${sentValue}`
-            );
-
-            if ((conditionValue === 1 && sentValue === "") || (conditionValue === 2)) {
-                console.log(
-                    `Preparing to send email for topic: ${plan.emailTopic} to recipient: ${recipient} at row ${recipientIndex + 2}.`
-                );
-
-                let sentStatus;
-                let dataMapping;
-                let consolidatedQrCode;
-                let emailTemplate;
-                let msgObj;
-                let attachments;
-                let inlineImages;
-
-                console.log("Start looking for mail template.")
-                try {
-                    emailTemplate = getGmailTemplateFromDrafts_(plan.emailTopic);
-                } catch (error) {
-                    console.error(`Failed get template from drafts ${recipient}: ${error.message}`);
-                    sentStatus = `${error.message} at ${Date()}`;
-                    console.log("Stacktrace:", error.stack);
-                    realizationSheet.getRange(recipientIndex + 2, sentColIdx + 1).setValue(sentStatus);
-                    return null
-                }
-
-                console.log("Start preparing data mapping.")
-                try {
-                    // Create mapping of realization headers to their respective data
-                    dataMapping = realizationHeaders.reduce((map, header, index) => {
-                        map[header] = recipientRow[index];
-                        return map;
-                    }, {});
-                } catch (error) {
-                    console.error(`Failed to parse realisation ${recipient}: ${error.message}`);
-                    sentStatus = `${error.message} at ${new Date().toISOString()}`;
-                    console.log("Stacktrace:", error.stack);
-                    realizationSheet.getRange(recipientIndex + 2, sentColIdx + 1).setValue(sentStatus);
-                    return null
-                }
-
-                console.log("Start preparing qr code data mapping.")
-                try {
-                    // Include QR code mappings for specific email topic
-                    if (sheetsData.qrCodes[plan.emailTopic]) {
-                        sheetsData.qrCodes[plan.emailTopic].forEach(qrCodeObj => {
-                            consolidatedQrCode = consolidateQrCodeData(qrCodeObj, recipientRow, realizationHeaders);
-                            dataMapping[`${qrCodeObj.imageName}`] = `<img src="cid:${qrCodeObj.imageName}" alt="QR Code">`;
-                        });
-                    }
-
-                    // Include global QR codes (available for all email topics)
-                    if (sheetsData.qrCodes["GLOBAL"]) {
-                        sheetsData.qrCodes["GLOBAL"].forEach(qrCodeObj => {
-                            consolidatedQrCode = consolidateQrCodeData(qrCodeObj, recipientRow, realizationHeaders);
-                            dataMapping[`${qrCodeObj.imageName}`] = `<img src="cid:${qrCodeObj.imageName}" alt="QR Code">`;
-                        });
-                    }
-                } catch (error) {
-                    console.error(`Failed to generate qr code ${recipient}: ${error.message}`);
-                    sentStatus = `${error.message} at ${new Date().toISOString()}`;
-                    console.log("Stacktrace:", error.stack);
-                    realizationSheet.getRange(recipientIndex + 2, sentColIdx + 1).setValue(sentStatus);
-                    return null
-                }
-
-                console.log("Start fill in template object.")
-                try {
-                    msgObj = fillInTemplateFromObject_(emailTemplate.message, {
-                        ...dataMapping,
-                        recipient,
-                        conditionValue,
-                        sentValue
-                    });
-                } catch (error) {
-                    console.error(`Failed to fill template ${recipient}: ${error.message}`);
-                    sentStatus = `${error.message} at ${new Date().toISOString()}`;
-                    console.log("Stacktrace:", error.stack);
-                    realizationSheet.getRange(recipientIndex + 2, sentColIdx + 1).setValue(sentStatus);
-                    return null
-                }
-
-                console.log("Start inlining images.")
-                try {
-                    attachments = emailTemplate.attachments || [];
-                    inlineImages = emailTemplate.inlineImages || {};
-
-                    // Add QR codes and replace placeholders in email content for specific email topic
-                    if (sheetsData.qrCodes[plan.emailTopic]) {
-                        sheetsData.qrCodes[plan.emailTopic].forEach(qrCodeObj => {
-                            // Only generate and insert QR codes that are actually needed in the email
-                            if (emailTemplate.message.html.includes(`{{${qrCodeObj.imageName}}}`)) {
-                                consolidatedQrCode = consolidateQrCodeData(qrCodeObj, recipientRow, realizationHeaders);
-                                msgObj.html = insertQrCodesIntoEmail(msgObj.html, inlineImages, consolidatedQrCode);
-                            }
-                        });
-                    }
-
-                    // Add global QR codes and replace placeholders in email content
-                    if (sheetsData.qrCodes["GLOBAL"]) {
-                        sheetsData.qrCodes["GLOBAL"].forEach(qrCodeObj => {
-                            // Only generate and insert global QR codes that are actually needed in the email
-                            if (emailTemplate.message.html.includes(`{{${qrCodeObj.imageName}}}`)) {
-                                consolidatedQrCode = consolidateQrCodeData(qrCodeObj, recipientRow, realizationHeaders);
-                                msgObj.html = insertQrCodesIntoEmail(msgObj.html, inlineImages, consolidatedQrCode);
-                            }
-                        });
-                    }
-                } catch (error) {
-                    console.error(`Failed to inline images ${recipient}: ${error.message}`);
-                    sentStatus = `${error.message} at ${new Date().toISOString()}`;
-                    console.log("Stacktrace:", error.stack);
-                    realizationSheet.getRange(recipientIndex + 2, sentColIdx + 1).setValue(sentStatus);
-                    return null
-                }
-
-                console.log("Start sending email.")
-                try {
-                    const emailOptions = {
-                        from: plan.senderEmail,
-                        cc:  plan.cc,
-                        bcc: plan.bcc,
-                        name: plan.senderName,
-                        htmlBody: msgObj.html,
-                        attachments: attachments,
-                        inlineImages: inlineImages
-                    };
-
-                    GmailApp.sendEmail(recipient, msgObj.subject, msgObj.text, emailOptions);
-
-                    sentStatus = new Date().toISOString();
-                } catch (error) {
-                    console.error(`Failed to send prepared email ${recipient}: ${error.message}`);
-                    sentStatus = `${error.message} at ${new Date().toISOString()}`;
-                    console.log("Stacktrace:", error.stack);
-                    realizationSheet.getRange(recipientIndex + 2, sentColIdx + 1).setValue(sentStatus);
-                    return null
-                }
-
-                // Update the "realizace" sheet with the status
-                const range = realizationSheet.getRange(recipientIndex + 2, sentColIdx + 1);
-
-                range.setValue(sentStatus);
-
-                range.setNumberFormat("dd.MM.yyyy HH:mm:ss");
-            }
-        });
-    });
-}
