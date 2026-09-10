@@ -51,9 +51,11 @@ function fillInTemplateFromObject_(template, data) {
     // console.log(`Try to fill template: Template = ${JSON.stringify(template, null, 2)}, Data = ${JSON.stringify(data, null, 2)}`);
     let template_string = JSON.stringify(template);
 
-    // Token replacement
+    // Token replacement. A numeric 0 must render as "0" (plain `|| ""` would
+    // drop it); other falsy values (empty cell, unchecked checkbox, null) stay "".
     template_string = template_string.replace(/{{[^{}]+}}/g, key => {
-        return escapeData_(data[key.replace(/[{}]+/g, "")] || "");
+        const value = data[key.replace(/[{}]+/g, "")];
+        return escapeData_(value === 0 ? "0" : (value || ""));
     });
     return JSON.parse(template_string);
 }
