@@ -634,8 +634,11 @@ function processEmails() {
 
       console.log(`Preparing to send email for topic: ${plan.emailTopic} to recipient: ${recipient} at row ${recipientIndex + 2}.`);
 
-      const writeSentStatus = (status) => {
-        realizationSheet.getRange(recipientIndex + 2, sentColIdx + 1).setValue(status);
+      // Error status stays text (it carries the message); the timestamp is
+      // formatted in the script time zone to match the sheet's date display.
+      const writeSentStatus = (message) => {
+        const stamp = Utilities.formatDate(new Date(), Session.getScriptTimeZone(), "dd.MM.yyyy HH:mm:ss");
+        realizationSheet.getRange(recipientIndex + 2, sentColIdx + 1).setValue(`${message} at ${stamp}`);
       };
 
       let emailTemplate, dataMapping, msgObj, attachments, inlineImages;
@@ -644,7 +647,7 @@ function processEmails() {
         emailTemplate = getEmailTemplate_(plan);
       } catch (error) {
         reportRunError(`Failed to get template for ${recipient}: ${error.message}`);
-        writeSentStatus(`${error.message} at ${new Date().toISOString()}`);
+        writeSentStatus(error.message);
         return;
       }
 
@@ -655,7 +658,7 @@ function processEmails() {
         }, {});
       } catch (error) {
         reportRunError(`Failed to parse realization for ${recipient}: ${error.message}`);
-        writeSentStatus(`${error.message} at ${new Date().toISOString()}`);
+        writeSentStatus(error.message);
         return;
       }
 
@@ -675,7 +678,7 @@ function processEmails() {
         });
       } catch (error) {
         reportRunError(`Failed to fill template for ${recipient}: ${error.message}`);
-        writeSentStatus(`${error.message} at ${new Date().toISOString()}`);
+        writeSentStatus(error.message);
         return;
       }
 
@@ -692,7 +695,7 @@ function processEmails() {
         });
       } catch (error) {
         reportRunError(`Failed to inline images for ${recipient}: ${error.message}`);
-        writeSentStatus(`${error.message} at ${new Date().toISOString()}`);
+        writeSentStatus(error.message);
         return;
       }
 
@@ -708,11 +711,13 @@ function processEmails() {
         });
 
         const range = realizationSheet.getRange(recipientIndex + 2, sentColIdx + 1);
-        range.setValue(new Date().toISOString());
+        // Write a real Date (not an ISO string) so the cell is a date value
+        // displayed in the spreadsheet's time zone, like Google Forms does.
+        range.setValue(new Date());
         range.setNumberFormat("dd.MM.yyyy HH:mm:ss");
       } catch (error) {
         reportRunError(`Failed to send email to ${recipient}: ${error.message}`);
-        writeSentStatus(`${error.message} at ${new Date().toISOString()}`);
+        writeSentStatus(error.message);
       }
     });
   });
