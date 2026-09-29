@@ -581,16 +581,50 @@ function insertQrCodesIntoEmail(htmlBody, inlineImages, qrCodeObj) {
 }
 
 function processEmails() {
-  const planData = parsePlanData();
-  const realizationCache = {};
+  logEvent_("mail_run_start", "INFO", { quota: logMailQuota_("start of run") });
 
   // Collects all per-campaign and per-recipient errors; reported to the
-  // HEALTHCHECKS_PING_URL_WARNING check at the end of the run.
+  // HEALTHCHECKS_PING_URL_WARNING check at the end of the run and written
+  // to the "log" sheet as they happen.
   const runErrors = [];
-  const reportRunError = (message) => {
-    console.error(message);
+  const reportRunError = (name, message, values) => {
     runErrors.push(message);
+    logEvent_(name, "ERROR", values, message);
   };
+  // Shared with processEmailPlans_ so the end-of-run log shows the real
+  // count even when the run aborts half way through.
+  const runStats = { sent: 0 };
+
+  try {
+    processEmailPlans_(reportRunError, runStats);
+  } catch (error) {
+    logEvent_("mail_run_failed", "ERROR", { error: error.message, stack: error.stack || "" }, error.message);
+    throw error;
+  } finally {
+    logEvent_("mail_run_end", "INFO", {
+      quota: logMailQuota_("end of run"),
+      sent: runStats.sent,
+      errors: runErrors.length
+    });
+  }
+
+  // Warning check: fails when any single campaign or email failed, even
+  // though the run itself finished. Success ping keeps the check alive.
+  if (runErrors.length > 0) {
+    pingHealthcheck_('/fail', `${runErrors.length} error(s) during run:\n\n${runErrors.join('\n')}`, 'HEALTHCHECKS_PING_URL_WARNING');
+  } else {
+    pingHealthcheck_('', null, 'HEALTHCHECKS_PING_URL_WARNING');
+  }
+}
+
+/**
+ * Walks all plan rows and sends the due emails.
+ * @param {Function} reportRunError (name, message, values) => void
+ * @param {{sent: number}} runStats Incremented for every email sent successfully.
+ */
+function processEmailPlans_(reportRunError, runStats) {
+  const planData = parsePlanData();
+  const realizationCache = {};
 
   planData.forEach(plan => {
     const cacheKey = plan.sheetName;
@@ -603,7 +637,7 @@ function processEmails() {
         realizationDoc = loadRealizationSheet(plan.sheetName);
         realizationCache[cacheKey] = realizationDoc;
       } catch (error) {
-        reportRunError(`Failed to load realization sheet for topic "${plan.emailTopic}": ${error.message}`);
+        reportRunError("realization_sheet_load_failed", `Failed to load realization sheet for topic "${plan.emailTopic}": ${error.message}`, { emailTopic: plan.emailTopic, sheetName: plan.sheetName });
         return;
       }
     }
@@ -612,7 +646,7 @@ function processEmails() {
 
     const recipientIdx = realizationHeaders.indexOf(MAIL_CONFIG.RECIPIENT_COL);
     if (recipientIdx === -1) {
-      reportRunError(`Recipient column (${MAIL_CONFIG.RECIPIENT_COL}) not found in sheet ${plan.sheetName}.`);
+      reportRunError("recipient_column_missing", `Recipient column (${MAIL_CONFIG.RECIPIENT_COL}) not found in sheet ${plan.sheetName}.`, { emailTopic: plan.emailTopic, sheetName: plan.sheetName, column: MAIL_CONFIG.RECIPIENT_COL });
       return;
     }
 
@@ -620,7 +654,7 @@ function processEmails() {
     const sentColIdx = realizationHeaders.indexOf(plan.sentColumn);
 
     if (conditionColIdx === -1 || sentColIdx === -1) {
-      reportRunError(`Columns "${plan.conditionColumn}" or "${plan.sentColumn}" not found in sheet ${plan.sheetName}.`);
+      reportRunError("plan_columns_missing", `Columns "${plan.conditionColumn}" or "${plan.sentColumn}" not found in sheet ${plan.sheetName}.`, { emailTopic: plan.emailTopic, sheetName: plan.sheetName, conditionColumn: plan.conditionColumn, sentColumn: plan.sentColumn });
       return;
     }
 
@@ -635,6 +669,7 @@ function processEmails() {
       }
 
       console.log(`Preparing to send email for topic: ${plan.emailTopic} to recipient: ${recipient} at row ${recipientIndex + 2}.`);
+      const rowRef = { emailTopic: plan.emailTopic, sheetName: plan.sheetName, row: recipientIndex + 2, recipient };
 
       // Error status stays text (it carries the message); the timestamp is
       // formatted in the script time zone to match the sheet's date display.
@@ -648,7 +683,7 @@ function processEmails() {
       try {
         emailTemplate = getEmailTemplate_(plan);
       } catch (error) {
-        reportRunError(`Failed to get template for ${recipient}: ${error.message}`);
+        reportRunError("template_load_failed", `Failed to get template for ${recipient}: ${error.message}`, { ...rowRef, error: error.message });
         writeSentStatus(error.message);
         return;
       }
@@ -659,7 +694,7 @@ function processEmails() {
           return map;
         }, {});
       } catch (error) {
-        reportRunError(`Failed to parse realization for ${recipient}: ${error.message}`);
+        reportRunError("realization_parse_failed", `Failed to parse realization for ${recipient}: ${error.message}`, { ...rowRef, error: error.message });
         writeSentStatus(error.message);
         return;
       }
@@ -679,7 +714,7 @@ function processEmails() {
           sentValue
         });
       } catch (error) {
-        reportRunError(`Failed to fill template for ${recipient}: ${error.message}`);
+        reportRunError("template_fill_failed", `Failed to fill template for ${recipient}: ${error.message}`, { ...rowRef, error: error.message });
         writeSentStatus(error.message);
         return;
       }
@@ -696,13 +731,13 @@ function processEmails() {
           }
         });
       } catch (error) {
-        reportRunError(`Failed to inline images for ${recipient}: ${error.message}`);
+        reportRunError("inline_images_failed", `Failed to inline images for ${recipient}: ${error.message}`, { ...rowRef, error: error.message });
         writeSentStatus(error.message);
         return;
       }
 
       try {
-        GmailApp.sendEmail(recipient, msgObj.subject, msgObj.text, {
+        const sendOptions = {
           from: plan.senderEmail,
           cc: plan.cc,
           bcc: plan.bcc,
@@ -710,7 +745,23 @@ function processEmails() {
           htmlBody: msgObj.html,
           attachments: attachments,
           inlineImages: inlineImages
-        });
+        };
+        // Bodies are left out of the payload; the template data, addressing
+        // and row reference are enough to reconstruct what was sent.
+        const payload = {
+          ...rowRef,
+          templateSource: plan.templateSource,
+          subject: msgObj.subject,
+          from: plan.senderEmail,
+          cc: plan.cc,
+          bcc: plan.bcc,
+          senderName: plan.senderName,
+          attachments: attachments.map(a => a.getName()),
+          inlineImages: Object.keys(inlineImages),
+          data: { ...dataMapping, conditionValue, sentValue }
+        };
+        sendEmailLogged_(plan.emailTopic, recipient, msgObj.subject, msgObj.text, sendOptions, payload);
+        runStats.sent++;
 
         const range = realizationSheet.getRange(recipientIndex + 2, sentColIdx + 1);
         // Write a real Date (not an ISO string) so the cell is a date value
@@ -718,18 +769,10 @@ function processEmails() {
         range.setValue(new Date());
         range.setNumberFormat("dd.MM.yyyy HH:mm:ss");
       } catch (error) {
-        reportRunError(`Failed to send email to ${recipient}: ${error.message}`);
+        reportRunError("email_send_failed", `Failed to send email to ${recipient}: ${error.message}`, { ...rowRef, error: error.message });
         writeSentStatus(error.message);
       }
     });
   });
-
-  // Warning check: fails when any single campaign or email failed, even
-  // though the run itself finished. Success ping keeps the check alive.
-  if (runErrors.length > 0) {
-    pingHealthcheck_('/fail', `${runErrors.length} error(s) during run:\n\n${runErrors.join('\n')}`, 'HEALTHCHECKS_PING_URL_WARNING');
-  } else {
-    pingHealthcheck_('', null, 'HEALTHCHECKS_PING_URL_WARNING');
-  }
 }
 

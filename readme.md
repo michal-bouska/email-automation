@@ -27,6 +27,24 @@ Mail sending and fio synchronization run on independent time-based triggers:
 
 Run the create functions once from the Apps Script editor; each can be installed or removed without affecting the other.
 
+## Logging
+
+Besides the console, the mail script writes to two sheets in the active spreadsheet
+(both are created automatically with a header row on first use):
+
+- `log` — general events: `timestamp`, `name`, `severity`, `values` (JSON), `message`.
+  Every run writes `mail_run_start` and `mail_run_end` (with the remaining daily email
+  quota and the sent/error counts); every per-campaign or per-recipient failure is
+  written as an `ERROR` row as it happens.
+- `email_log` — one row per send attempt: `timestamp`, `email_template`, `recipient`,
+  `quota_before`, `quota_after`, `status` (`sent` or `ERROR: …`), `payload` (JSON with
+  the template data, addressing and row reference; bodies are not stored).
+
+Use `logEvent_(name, severity, values, message)` to add your own events and
+`checkMailQuota()` to print the remaining daily quota from the editor.
+`MailApp.getRemainingDailyQuota()` needs the `script.send_mail` OAuth scope,
+which is listed in `appsscript.json`; re-authorize the script after deploying.
+
 ## Usage
 
 - Define your email rules and conditions in the Google Sheets.

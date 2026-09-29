@@ -2,6 +2,7 @@
 **/**
 !appsscript.json
 !Code.js
+!Logging.js
 !FioParser.js
 !Utils.js
 !WebApp.js
