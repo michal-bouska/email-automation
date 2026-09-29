@@ -88,7 +88,7 @@ function getOrCreateLogSheet_(name, headers) {
   let sheet = spreadsheet.getSheetByName(name);
   if (!sheet) {
     sheet = spreadsheet.insertSheet(name);
-    sheet.appendRow(headers);
+    appendRowKeepingWidths_(sheet, headers);
     sheet.setFrozenRows(1);
   }
   return sheet;
@@ -102,7 +102,7 @@ function getOrCreateLogSheet_(name, headers) {
  */
 function appendLogRow_(sheetName, headers, row) {
   const sheet = getOrCreateLogSheet_(sheetName, headers);
-  sheet.appendRow(row);
+  appendRowKeepingWidths_(sheet, row);
   // Re-write the timestamp so a user-defined column format is kept.
   setDateKeepingFormat_(sheet.getRange(sheet.getLastRow(), 1), row[0], LOG_TIMESTAMP_FORMAT);
 }

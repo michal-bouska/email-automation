@@ -671,11 +671,12 @@ function processEmailPlans_(reportRunError, runStats) {
       console.log(`Preparing to send email for topic: ${plan.emailTopic} to recipient: ${recipient} at row ${recipientIndex + 2}.`);
       const rowRef = { emailTopic: plan.emailTopic, sheetName: plan.sheetName, row: recipientIndex + 2, recipient };
 
-      // Error status stays text (it carries the message); the timestamp is
+      // Error status stays text (it carries the message) and starts with
+      // "ERROR:" so failures are easy to spot and filter; the timestamp is
       // formatted in the script time zone to match the sheet's date display.
       const writeSentStatus = (message) => {
         const stamp = Utilities.formatDate(new Date(), Session.getScriptTimeZone(), "dd.MM.yyyy HH:mm:ss");
-        realizationSheet.getRange(recipientIndex + 2, sentColIdx + 1).setValue(`${message} at ${stamp}`);
+        realizationSheet.getRange(recipientIndex + 2, sentColIdx + 1).setValue(`ERROR: ${message} at ${stamp}`);
       };
 
       let emailTemplate, dataMapping, msgObj, attachments, inlineImages;

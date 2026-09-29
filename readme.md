@@ -16,7 +16,8 @@ This project allows sending emails based on rules defined within Google Sheets. 
 2. Use the Google Sheets template.
 3. Set up your Google Apps Script environment. 
 4. Set the `FIO_API_TOKEN` variable in Script Properties to the token value from the Fio API.  
-5. Optionally set `REALIZATION_DOCUMENT_ID` in Script Properties to the ID of the spreadsheet holding the realization sheets (defaults to the active spreadsheet). All realization sheets live in this single document; the plan selects them by the `Sheet Name` column.
+5. Optionally set `VARIABLE_SYMBOL_PREFIX_REGEX` in Script Properties to a regex for the prefix of variable symbols that belong to this project (e.g. `7240[0-9]` or `72405|72406`). It is anchored to the start of the symbol automatically. When it is empty, transactions are matched by exact equality with `VARIABLE_SYMBOL_KEY` (default `72405`).
+6. Optionally set `REALIZATION_DOCUMENT_ID` in Script Properties to the ID of the spreadsheet holding the realization sheets (defaults to the active spreadsheet). All realization sheets live in this single document; the plan selects them by the `Sheet Name` column.
 
 ## Triggers
 
@@ -49,6 +50,8 @@ which is listed in `appsscript.json`; re-authorize the script after deploying.
 
 - Define your email rules and conditions in the Google Sheets.
 - Run the script to send emails and process transactions.
+- The "Column Sent" cell receives a timestamp on success or `ERROR: <message> at <time>` on failure.
+  The script never changes column widths or existing cell formats.
 
 # Fio
 Set lock

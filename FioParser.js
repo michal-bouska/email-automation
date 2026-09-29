@@ -11,7 +11,26 @@ function manualRun() {
     runUpdateMonitored();
 }
 
-const FIO_CONFIG = loadConfig([["FIO_API_TOKEN", "missing_fio_token"], ["VARIABLE_SYMBOL_KEY", '72405'], ["FIO_SYNC_SHEET", "FioSync"]]);
+const FIO_CONFIG = loadConfig([["FIO_API_TOKEN", "missing_fio_token"], ["VARIABLE_SYMBOL_KEY", '72405'], ["VARIABLE_SYMBOL_PREFIX_REGEX", ""], ["FIO_SYNC_SHEET", "FioSync"]]);
+
+/**
+ * Builds the matcher deciding which transactions belong to us by variable symbol.
+ * Script Property VARIABLE_SYMBOL_PREFIX_REGEX holds a regex for the prefix of
+ * the variable symbol (e.g. "7240[0-9]" or "72405|72406"); it is anchored to
+ * the start of the symbol automatically. When it is empty the legacy exact
+ * match against VARIABLE_SYMBOL_KEY is used.
+ * @param {string} prefixRegex Regex source for the prefix, may be empty.
+ * @param {string} exactKey Fallback exact variable symbol.
+ * @return {function(string): boolean}
+ */
+function buildVariableSymbolMatcher_(prefixRegex, exactKey) {
+    const source = (prefixRegex || '').trim();
+    if (!source) {
+        return (variableSymbol) => String(variableSymbol) === String(exactKey);
+    }
+    const regex = new RegExp(`^(?:${source})`);
+    return (variableSymbol) => regex.test(String(variableSymbol));
+}
 
 /**
  * Get transactions for the last 90 days from Fio Bank API
@@ -83,10 +102,10 @@ function parseTransactionNote(note) {
  * Process a single transaction and write it to the sheet
  * @param {Object} transaction - The transaction object from Fio API
  * @param {Object} sheet - The Google Sheet to write to
- * @param {string} variableSymbolKey - The variable symbol to filter by
+ * @param {function(string): boolean} isOurVariableSymbol - Decides whether the variable symbol belongs to us
  * @return {boolean} - Whether the transaction was processed and added to sheet
  */
-function processTransaction(transaction, sheet, variableSymbolKey) {
+function processTransaction(transaction, sheet, isOurVariableSymbol) {
     // Extract values from transaction columns
     const variableSymbol = transaction.column5?.value || '';
     const message = transaction.column16?.value || '';
@@ -119,9 +138,10 @@ function processTransaction(transaction, sheet, variableSymbolKey) {
     const type = transaction.column8?.value || '';
 
     let parsedNote;
+    const matchesVariableSymbol = isOurVariableSymbol(variableSymbol);
 
     // Parse the transaction note
-    if (variableSymbol === variableSymbolKey) {
+    if (matchesVariableSymbol) {
         parsedNote = parseTransactionNote(message);
     } else {
         parsedNote = {keys: '', count: 0};
@@ -143,10 +163,10 @@ function processTransaction(transaction, sheet, variableSymbolKey) {
         transactionId
     ];
 
-    sheet.appendRow(row);
+    appendRowKeepingWidths_(sheet, row);
 
     // Return true if it was a variable symbol match, false otherwise
-    return variableSymbol === variableSymbolKey;
+    return matchesVariableSymbol;
 }
 
 /**
@@ -187,8 +207,9 @@ function writeTransactionsToSheet() {
 
     // Check if the sheet is empty and add headers if needed
     const existingData = sheet.getDataRange().getValues();
-    if (existingData.length === 0) {
-        sheet.appendRow(headers);
+    const isNewSheet = existingData.length === 0;
+    if (isNewSheet) {
+        appendRowKeepingWidths_(sheet, headers);
     } else if (existingData[0].length < headers.length) {
         // Headers exist but may be missing our new columns - update them
         sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
@@ -200,6 +221,8 @@ function writeTransactionsToSheet() {
                     .map(row => row[11]) // Získání ID z 12. sloupce
                     .filter(id => id) // Vyfiltrování prázdných hodnot
     );
+
+    const isOurVariableSymbol = buildVariableSymbolMatcher_(FIO_CONFIG.VARIABLE_SYMBOL_PREFIX_REGEX, FIO_CONFIG.VARIABLE_SYMBOL_KEY);
 
     // Counter for new transactions
     let newTransactionsCount = 0;
@@ -214,7 +237,7 @@ function writeTransactionsToSheet() {
             newTransactionsCount++;
 
             // Use the named function to process the transaction
-            const wasProcessed = processTransaction(transaction, sheet, FIO_CONFIG.VARIABLE_SYMBOL_KEY);
+            const wasProcessed = processTransaction(transaction, sheet, isOurVariableSymbol);
 
             if (wasProcessed) {
                 filteredTransactionsCount++;
@@ -224,14 +247,17 @@ function writeTransactionsToSheet() {
         }
     });
 
-    // Format the sheet (only if we have data)
-    if (existingData.length === 0 || filteredTransactionsCount > 0) {
+    // Header styling only when the sheet was just created; column widths
+    // are never touched so manual sizing survives every sync.
+    if (isNewSheet) {
         sheet.getRange(1, 1, 1, headers.length).setFontWeight('bold');
-        sheet.autoResizeColumns(1, headers.length);
     }
 
+    const filterDescription = FIO_CONFIG.VARIABLE_SYMBOL_PREFIX_REGEX
+        ? `prefix /${FIO_CONFIG.VARIABLE_SYMBOL_PREFIX_REGEX}/`
+        : `variable symbol ${FIO_CONFIG.VARIABLE_SYMBOL_KEY}`;
     console.log(`Total new transactions to check: ${newTransactionsCount}`);
-    console.log(`Added ${filteredTransactionsCount} new transactions with variable symbol ${FIO_CONFIG.VARIABLE_SYMBOL_KEY}`);
+    console.log(`Added ${filteredTransactionsCount} new transactions matching ${filterDescription}`);
 }
 
 /**

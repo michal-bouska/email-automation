@@ -225,3 +225,18 @@ function setDateKeepingFormat_(range, date, defaultFormat) {
         range.setNumberFormat(defaultFormat);
     }
 }
+
+/**
+ * Appends a row after the last row with content, without touching column
+ * widths. Sheet.appendRow() can auto-resize columns; writing through
+ * setValues() never does.
+ * @param {Sheet} sheet
+ * @param {Array} row
+ */
+function appendRowKeepingWidths_(sheet, row) {
+    const nextRow = sheet.getLastRow() + 1;
+    if (nextRow > sheet.getMaxRows()) {
+        sheet.insertRowsAfter(sheet.getMaxRows(), nextRow - sheet.getMaxRows());
+    }
+    sheet.getRange(nextRow, 1, 1, row.length).setValues([row]);
+}
