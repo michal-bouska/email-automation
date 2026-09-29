@@ -1,7 +1,7 @@
 const MAIL_CONFIG = loadConfig([["RECIPIENT_COL", "Recipient"], ["EMAIL_PLAN_SHEET", "plan"], ["EMAIL_LOG_SHEET", "realizace"], ["REALIZATION_DOCUMENT_ID", null], ["SENDER_EMAIL", null], ["CC_EMAIL", ""], ["SENDER_NAME", null]]);
 
 function processEmailsMonitored() {
-  withHealthcheck_(processEmails)();
+  withHealthcheck_(withJobTracking_('mail', processEmails))();
 }
 
 function myFunction() {
@@ -10,17 +10,27 @@ function myFunction() {
 }
 
 /**
- * Creates the "Mail Merge" and "Fio Sync" menus for user to run scripts
- * on drop-down. Single onOpen for the whole project (a second onOpen in
- * another file would silently override this one).
+ * Creates the "Mail Merge", "Fio Sync" and "Script Dashboard" menus.
+ * Single onOpen for the whole project (a second onOpen in another file
+ * would silently override this one).
  */
 function onOpen() {
     const ui = SpreadsheetApp.getUi();
     ui.createMenu('Mail Merge')
         .addItem('Send Emails', 'myFunction')
+        .addSeparator()
+        .addItem('Vytvořit trigger (každou hodinu)', 'createMailTrigger')
+        .addItem('Odstranit trigger', 'deleteMailTrigger')
         .addToUi();
     ui.createMenu('Fio Sync')
         .addItem('Načíst nové platby', 'runUpdate')
+        .addSeparator()
+        .addItem('Vytvořit trigger (každých 5 minut)', 'createFioTrigger')
+        .addItem('Odstranit trigger', 'deleteFioTrigger')
+        .addToUi();
+    ui.createMenu('Script Dashboard')
+        .addItem('Obnovit dashboard', 'refreshDashboard')
+        .addItem('Zkontrolovat kvótu e-mailů', 'checkMailQuota')
         .addToUi();
 }
 
@@ -28,14 +38,16 @@ function onOpen() {
  * Installs the time-based trigger for sending emails (independent of the fio trigger).
  */
 function createMailTrigger() {
-    ensureTimeTrigger_('processEmailsMonitored', 60);
+    ensureTimeTrigger_(JOBS.mail.handler, JOBS.mail.intervalMinutes);
+    refreshDashboard();
 }
 
 /**
  * Removes the time-based trigger for sending emails.
  */
 function deleteMailTrigger() {
-    deleteTimeTriggers_('processEmailsMonitored');
+    deleteTimeTriggers_(JOBS.mail.handler);
+    refreshDashboard();
 }
 
 /**
@@ -615,6 +627,8 @@ function processEmails() {
   } else {
     pingHealthcheck_('', null, 'HEALTHCHECKS_PING_URL_WARNING');
   }
+
+  return { sent: runStats.sent, errors: runErrors.length };
 }
 
 /**

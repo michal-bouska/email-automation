@@ -26,7 +26,18 @@ Mail sending and fio synchronization run on independent time-based triggers:
 - `createMailTrigger()` / `deleteMailTrigger()` — hourly trigger for `processEmailsMonitored`.
 - `createFioTrigger()` / `deleteFioTrigger()` — 5-minute trigger for `runUpdateMonitored`.
 
-Run the create functions once from the Apps Script editor; each can be installed or removed without affecting the other.
+Run them from the spreadsheet menus (**Mail Merge** / **Fio Sync** → create or remove trigger)
+or once from the Apps Script editor; each can be installed or removed without affecting the other.
+Handlers and intervals are defined in the `JOBS` registry in `Dashboard.js`.
+
+## Script Dashboard
+
+The **Script Dashboard** menu refreshes a sheet of the same name showing, for every job,
+the trigger state, handler, interval, last start and end, duration, status, result details
+(emails sent / errors, transactions checked / added) and the remaining daily email quota.
+Every job run (from a trigger or the menu) records itself in Script Properties
+(`JOB_RUN_mail`, `JOB_RUN_fio`) and refreshes the sheet when it finishes.
+Only cell contents are rewritten; formats and column widths are left as they are.
 
 ## Logging
 

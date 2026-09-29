@@ -180,7 +180,7 @@ function writeTransactionsToSheet() {
 
     if (!transactionsData || !transactionsData.accountStatement || !transactionsData.accountStatement.transactionList) {
         console.log('No new transaction data available');
-        return;
+        return { checked: 0, added: 0 };
     }
 
     // Get the transactions array
@@ -188,15 +188,14 @@ function writeTransactionsToSheet() {
 
     if (transactions.length === 0) {
         console.log('No new transactions found');
-        return;
+        return { checked: 0, added: 0 };
     }
 
     // Open the specified Google Sheet
     const sheetName = FIO_CONFIG.FIO_SYNC_SHEET;
     const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(sheetName);
     if (!sheet) {
-        console.log(`Sheet "${sheetName}" not found in the spreadsheet`);
-        return;
+        throw new Error(`Sheet "${sheetName}" not found in the spreadsheet`);
     }
 
     // Prepare headers with columns for parsed keys and count
@@ -258,27 +257,31 @@ function writeTransactionsToSheet() {
         : `variable symbol ${FIO_CONFIG.VARIABLE_SYMBOL_KEY}`;
     console.log(`Total new transactions to check: ${newTransactionsCount}`);
     console.log(`Added ${filteredTransactionsCount} new transactions matching ${filterDescription}`);
+
+    return { checked: newTransactionsCount, added: filteredTransactionsCount };
 }
 
 /**
  * Installs the time-based trigger for fio updates (independent of the mail trigger).
  */
 function createFioTrigger() {
-    ensureTimeTrigger_('runUpdateMonitored', 5);
+    ensureTimeTrigger_(JOBS.fio.handler, JOBS.fio.intervalMinutes);
+    refreshDashboard();
 }
 
 /**
  * Removes the time-based trigger for fio updates.
  */
 function deleteFioTrigger() {
-    deleteTimeTriggers_('runUpdateMonitored');
+    deleteTimeTriggers_(JOBS.fio.handler);
+    refreshDashboard();
 }
 
 /**
- * Function that will be called by the trigger
+ * Fio sync entry point (menu and trigger); tracked on the dashboard.
  */
 function runUpdate() {
-    writeTransactionsToSheet();
+    withJobTracking_('fio', writeTransactionsToSheet)();
 }
 
 function runUpdateMonitored() {
