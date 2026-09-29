@@ -763,11 +763,11 @@ function processEmailPlans_(reportRunError, runStats) {
         sendEmailLogged_(plan.emailTopic, recipient, msgObj.subject, msgObj.text, sendOptions, payload);
         runStats.sent++;
 
-        const range = realizationSheet.getRange(recipientIndex + 2, sentColIdx + 1);
         // Write a real Date (not an ISO string) so the cell is a date value
         // displayed in the spreadsheet's time zone, like Google Forms does.
-        range.setValue(new Date());
-        range.setNumberFormat("dd.MM.yyyy HH:mm:ss");
+        // An existing cell format is kept; the default applies only to
+        // unformatted cells.
+        setDateKeepingFormat_(realizationSheet.getRange(recipientIndex + 2, sentColIdx + 1), new Date(), "dd.MM.yyyy HH:mm:ss");
       } catch (error) {
         reportRunError("email_send_failed", `Failed to send email to ${recipient}: ${error.message}`, { ...rowRef, error: error.message });
         writeSentStatus(error.message);

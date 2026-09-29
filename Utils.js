@@ -208,3 +208,20 @@ function withHealthcheck_(fn, propertyName) {
     }
   };
 }
+/**
+ * Writes a Date into a cell and applies the given number format only when
+ * the cell has no explicit format yet. A format already set on the cell
+ * (or the whole column) by the user is preserved.
+ * @param {Range} range Single-cell range.
+ * @param {Date} date Value to write.
+ * @param {string} defaultFormat Number format used for unformatted cells.
+ */
+function setDateKeepingFormat_(range, date, defaultFormat) {
+    // Read before the write: setting a Date on an unformatted cell makes
+    // Sheets auto-assign a date format, which would hide the original state.
+    const currentFormat = range.getNumberFormat();
+    range.setValue(date);
+    if (!currentFormat || currentFormat === "General") {
+        range.setNumberFormat(defaultFormat);
+    }
+}

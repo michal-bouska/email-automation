@@ -103,7 +103,8 @@ function getOrCreateLogSheet_(name, headers) {
 function appendLogRow_(sheetName, headers, row) {
   const sheet = getOrCreateLogSheet_(sheetName, headers);
   sheet.appendRow(row);
-  sheet.getRange(sheet.getLastRow(), 1).setNumberFormat(LOG_TIMESTAMP_FORMAT);
+  // Re-write the timestamp so a user-defined column format is kept.
+  setDateKeepingFormat_(sheet.getRange(sheet.getLastRow(), 1), row[0], LOG_TIMESTAMP_FORMAT);
 }
 
 /**
