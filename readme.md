@@ -50,7 +50,12 @@ Besides the console, the mail script writes to two sheets in the active spreadsh
   written as an `ERROR` row as it happens.
 - `email_log` — one row per send attempt: `timestamp`, `email_template`, `recipient`,
   `quota_before`, `quota_after`, `status` (`sent` or `ERROR: …`), `payload` (JSON with
-  the template data, addressing and row reference; bodies are not stored).
+  the template data, addressing and row reference; bodies are not stored), `response`
+  (JSON with what Gmail reported back: `messageId`, `threadId`, `date`, `from`, `to`,
+  `cc`, `bcc`, `subject`; on failure the error message, name and stage).
+  Emails are sent via `GmailApp.createDraft(...).send()` because `sendEmail()` returns
+  nothing; the `response` column is missing on sheets created by older versions and
+  its header is added automatically on the next write.
 
 Use `logEvent_(name, severity, values, message)` to add your own events and
 `checkMailQuota()` to print the remaining daily quota from the editor.

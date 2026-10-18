@@ -4,7 +4,9 @@
  * Two sheets in the active spreadsheet, created on first use:
  *  - "log"       — general events: timestamp, name, severity, values (JSON), message
  *  - "email_log" — one row per email send attempt: timestamp, email_template,
- *                  recipient, quota_before, quota_after, status, payload (JSON)
+ *                  recipient, quota_before, quota_after, status, payload (JSON),
+ *                  response (JSON: Gmail message id, thread id, date, addressing
+ *                  as reported by Google, or the error on failure)
  *
  * Logging never throws; failures are reported to console only so a broken
  * log sheet cannot stop a mail run.
@@ -14,7 +16,7 @@ const LOG_SHEET_NAME = "log";
 const EMAIL_LOG_SHEET_NAME = "email_log";
 
 const LOG_HEADERS = ["timestamp", "name", "severity", "values", "message"];
-const EMAIL_LOG_HEADERS = ["timestamp", "email_template", "recipient", "quota_before", "quota_after", "status", "payload"];
+const EMAIL_LOG_HEADERS = ["timestamp", "email_template", "recipient", "quota_before", "quota_after", "status", "payload", "response"];
 
 // Google Sheets cell limit is 50 000 characters; keep JSON safely under it.
 const LOG_CELL_MAX_CHARS = 49000;
@@ -90,6 +92,12 @@ function getOrCreateLogSheet_(name, headers) {
     sheet = spreadsheet.insertSheet(name);
     appendRowKeepingWidths_(sheet, headers);
     sheet.setFrozenRows(1);
+    return sheet;
+  }
+  // Headers added in later versions are appended to the existing header row.
+  const existing = sheet.getLastColumn();
+  if (existing < headers.length) {
+    sheet.getRange(1, existing + 1, 1, headers.length - existing).setValues([headers.slice(existing)]);
   }
   return sheet;
 }
@@ -127,8 +135,35 @@ function logEvent_(name, severity, values, message) {
 }
 
 /**
+ * Summary of a sent GmailMessage for the log: what Google reports back.
+ * @param {GmailMessage} message
+ * @return {object}
+ */
+function describeSentMessage_(message) {
+  const summary = {};
+  const read = (key, fn) => {
+    try { summary[key] = fn(); } catch (error) { summary[key] = `<error: ${error.message}>`; }
+  };
+  read("messageId", () => message.getId());
+  read("threadId", () => message.getThread().getId());
+  read("date", () => message.getDate().toISOString());
+  read("from", () => message.getFrom());
+  read("to", () => message.getTo());
+  read("cc", () => message.getCc());
+  read("bcc", () => message.getBcc());
+  read("subject", () => message.getSubject());
+  return summary;
+}
+
+/**
  * Sends an email through GmailApp and records the attempt in "email_log"
- * with the remaining quota before and after the send.
+ * with the remaining quota before and after the send and Google's response.
+ *
+ * GmailApp.sendEmail() returns nothing, so the message is created as a draft
+ * and sent with GmailDraft.send(), which returns the resulting GmailMessage
+ * (id, thread id, date, addressing as stored by Gmail). Both paths accept the
+ * same options and count against the same daily quota. A draft left behind
+ * by a failed send is deleted on a best-effort basis.
  * Rethrows the send error after logging it so callers keep their own handling.
  * @param {string} templateName Email template identifier (plan Email Topic).
  * @param {string} recipient
@@ -136,21 +171,31 @@ function logEvent_(name, severity, values, message) {
  * @param {string} body Plain-text body.
  * @param {object} options GmailApp.sendEmail options (from, cc, bcc, name, htmlBody, attachments, inlineImages).
  * @param {object} payload Data logged as JSON (template data, addressing, row reference).
+ * @return {GmailMessage|null} The sent message as reported by Gmail.
  */
 function sendEmailLogged_(templateName, recipient, subject, body, options, payload) {
   const quotaBefore = getRemainingMailQuota_();
   let status = "sent";
   let sendError = null;
+  let message = null;
+  let response;
 
+  let draft = null;
   try {
-    GmailApp.sendEmail(recipient, subject, body, options);
+    draft = GmailApp.createDraft(recipient, subject, body, options);
+    message = draft.send();
+    response = describeSentMessage_(message);
   } catch (error) {
     sendError = error;
     status = `ERROR: ${error.message}`;
+    response = { error: error.message, name: error.name, stage: draft ? "send" : "createDraft" };
+    if (draft) {
+      try { draft.deleteDraft(); } catch (cleanupError) { console.warn(`Cannot delete failed draft: ${cleanupError.message}`); }
+    }
   }
 
   const quotaAfter = getRemainingMailQuota_();
-  console.log(`Email "${templateName}" to ${recipient}: ${status}. Remaining daily email quota: ${quotaAfter === null ? "unknown" : quotaAfter}`);
+  console.log(`Email "${templateName}" to ${recipient}: ${status}. Gmail response: ${safeJsonForLog_(response)}. Remaining daily email quota: ${quotaAfter === null ? "unknown" : quotaAfter}`);
 
   try {
     appendLogRow_(EMAIL_LOG_SHEET_NAME, EMAIL_LOG_HEADERS, [
@@ -160,11 +205,13 @@ function sendEmailLogged_(templateName, recipient, subject, body, options, paylo
       quotaBefore === null ? "" : quotaBefore,
       quotaAfter === null ? "" : quotaAfter,
       status,
-      safeJsonForLog_(payload)
+      safeJsonForLog_(payload),
+      safeJsonForLog_(response)
     ]);
   } catch (error) {
     console.error(`Failed to write to "${EMAIL_LOG_SHEET_NAME}" sheet: ${error.message}`);
   }
 
   if (sendError) throw sendError;
+  return message;
 }
