@@ -496,6 +496,36 @@ function parseQrCodeData(qrCodeData) {
 }
 
 /**
+ * Turns off the sheet's basic filter by clearing every column's criteria,
+ * so all rows are visible before the script works with the sheet. The
+ * filter itself (its range and dropdown buttons) is kept. Filter views are
+ * personal to each user and do not hide rows for others, so they are left
+ * alone.
+ * @param {Sheet} sheet
+ * @return {number} Number of columns whose criteria were cleared.
+ */
+function clearSheetFilter_(sheet) {
+  const filter = sheet.getFilter();
+  if (!filter) return 0;
+
+  const range = filter.getRange();
+  const firstCol = range.getColumn();
+  const cleared = [];
+  for (let col = firstCol; col < firstCol + range.getNumColumns(); col++) {
+    if (filter.getColumnFilterCriteria(col)) {
+      filter.removeColumnFilterCriteria(col);
+      cleared.push(col);
+    }
+  }
+
+  if (cleared.length > 0) {
+    console.log(`Cleared filter criteria on sheet "${sheet.getName()}" in columns ${cleared.join(", ")}.`);
+    logEvent_("realization_filter_cleared", "INFO", { sheetName: sheet.getName(), columns: cleared });
+  }
+  return cleared.length;
+}
+
+/**
  * Loads realization data and QR code data from the realization spreadsheet.
  * @param {string} sheetName The sheet tab name containing realization data.
  * @return {object} { headers, data, qrCodes, sheet }
@@ -507,6 +537,8 @@ function loadRealizationSheet(sheetName) {
   if (!realizationSheet) {
     throw new Error(`Sheet "${sheetName}" not found in the realization document.`);
   }
+
+  clearSheetFilter_(realizationSheet);
 
   const realizationRaw = realizationSheet.getDataRange().getValues();
   const headers = realizationRaw[0] || [];

@@ -68,6 +68,9 @@ which is listed in `appsscript.json`; re-authorize the script after deploying.
 - Run the script to send emails and process transactions.
 - The "Column Sent" cell receives a timestamp on success or `ERROR: <message> at <time>` on failure.
   The script never changes column widths or existing cell formats.
+- Before a realization sheet is read, the criteria of its filter are cleared so all rows are
+  visible (the filter range and dropdowns stay; personal filter views are not touched).
+  Each clearing is logged as `realization_filter_cleared`.
 
 # Fio
 Set lock
