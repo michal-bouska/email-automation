@@ -887,6 +887,7 @@ function processEmailPlans_(reportRunError, runStats) {
  * Copies values within one realization row: for each pair the value of the
  * From column (as read at the start of the run, i.e. the value the email was
  * built from, a formula's computed result) is written into the To column.
+ * Text that would be parsed as a formula is written as text.
  * The To cell keeps its own number format; an unformatted To cell takes the
  * From cell's format so dates and numbers display the same way.
  * @param {Sheet} sheet Realization sheet.
@@ -899,7 +900,11 @@ function copyColumnValues_(sheet, rowNumber, recipientRow, columnCopies) {
     const value = recipientRow[fromIdx];
     const target = sheet.getRange(rowNumber, toIdx + 1);
     const targetFormat = target.getNumberFormat();
-    target.setValue(value);
+    // getValues() returns text such as "=IMPORTXML(...)" (e.g. a form answer)
+    // as a plain string; setValue() would turn it into a live formula. A
+    // leading apostrophe keeps it as text.
+    const safeValue = typeof value === "string" && /^[=+\-@]/.test(value) ? `'${value}` : value;
+    target.setValue(safeValue);
     if (!targetFormat || targetFormat === "General") {
       target.setNumberFormat(sheet.getRange(rowNumber, fromIdx + 1).getNumberFormat());
     }
