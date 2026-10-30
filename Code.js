@@ -566,7 +566,9 @@ function loadRealizationSheet(sheetName) {
 
 /**
  * Transforms plan data into objects with validation.
- * Plan sheet columns: Email Topic, Column Condition To Send, Column Sent, Sheet Name.
+ * Plan sheet columns: Email Topic, Column Condition To Send, Column Sent, Sheet Name,
+ * optionally Template Source, Sender Email, CC, BCC, Sender Name, Issue Name,
+ * Issue Column and Copy From N / Copy To N pairs.
  * @returns {Array<Object>} Array of parsed plan objects.
  */
 function parsePlanData() {
@@ -597,6 +599,17 @@ function parsePlanData() {
     throw new Error("Required headers are missing in the plan data.");
   }
 
+  // Optional "Copy From N" / "Copy To N" column pairs (N = 1..5, more work
+  // too): after a successful send the value of the From column is copied
+  // into the To column of the same realization row.
+  const copyPairIdx = [];
+  normalizedHeaders.forEach((header, idx) => {
+    const match = header.match(/^copy from (\d+)$/);
+    if (!match) return;
+    copyPairIdx.push({ n: Number(match[1]), fromIdx: idx, toIdx: headers.indexOf(`Copy To ${match[1]}`) });
+  });
+  copyPairIdx.sort((a, b) => a.n - b.n);
+
   return planData.slice(1)
     .filter(row => row[emailTopicIdx])
     .map(row => {
@@ -616,7 +629,12 @@ function parsePlanData() {
         senderEmail: senderEmailIdx !== -1 && row[senderEmailIdx] ? row[senderEmailIdx] : MAIL_CONFIG.SENDER_EMAIL,
         cc: ccIdx !== -1 && row[ccIdx] ? row[ccIdx] : MAIL_CONFIG.CC_EMAIL,
         bcc: bccIdx !== -1 && row[bccIdx] ? row[bccIdx] : null,
-        senderName: senderNameIdx !== -1 && row[senderNameIdx] ? row[senderNameIdx] : MAIL_CONFIG.SENDER_NAME
+        senderName: senderNameIdx !== -1 && row[senderNameIdx] ? row[senderNameIdx] : MAIL_CONFIG.SENDER_NAME,
+        columnCopies: copyPairIdx.map(({ n, fromIdx, toIdx }) => ({
+          n,
+          from: String(row[fromIdx] || "").trim(),
+          to: toIdx !== -1 ? String(row[toIdx] || "").trim() : ""
+        })).filter(pair => pair.from || pair.to)
       };
     });
 }
@@ -715,6 +733,25 @@ function processEmailPlans_(reportRunError, runStats) {
 
     if (conditionColIdx === -1 || sentColIdx === -1) {
       reportRunError("plan_columns_missing", `Columns "${plan.conditionColumn}" or "${plan.sentColumn}" not found in sheet ${plan.sheetName}.`, { emailTopic: plan.emailTopic, sheetName: plan.sheetName, conditionColumn: plan.conditionColumn, sentColumn: plan.sentColumn });
+      return;
+    }
+
+    // Resolve the copy pairs once per plan; an incomplete pair or a missing
+    // column skips the whole plan so no email goes out without its snapshot.
+    const copyErrors = [];
+    const columnCopies = plan.columnCopies.map(pair => {
+      if (!pair.from || !pair.to) {
+        copyErrors.push(`Copy pair ${pair.n} needs both "Copy From ${pair.n}" and "Copy To ${pair.n}"`);
+        return null;
+      }
+      const fromIdx = realizationHeaders.indexOf(pair.from);
+      const toIdx = realizationHeaders.indexOf(pair.to);
+      if (fromIdx === -1) copyErrors.push(`Column "${pair.from}" (Copy From ${pair.n}) not found`);
+      if (toIdx === -1) copyErrors.push(`Column "${pair.to}" (Copy To ${pair.n}) not found`);
+      return { ...pair, fromIdx, toIdx };
+    });
+    if (copyErrors.length > 0) {
+      reportRunError("copy_columns_invalid", `Invalid column copy setup for topic "${plan.emailTopic}" in sheet ${plan.sheetName}: ${copyErrors.join("; ")}.`, { emailTopic: plan.emailTopic, sheetName: plan.sheetName, columnCopies: plan.columnCopies });
       return;
     }
 
@@ -832,8 +869,40 @@ function processEmailPlans_(reportRunError, runStats) {
       } catch (error) {
         reportRunError("email_send_failed", `Failed to send email to ${recipient}: ${error.message}`, { ...rowRef, error: error.message });
         writeSentStatus(error.message);
+        return;
+      }
+
+      // The email is already sent, so a failed copy is only reported and
+      // never overwrites the sent timestamp.
+      try {
+        copyColumnValues_(realizationSheet, recipientIndex + 2, recipientRow, columnCopies);
+      } catch (error) {
+        reportRunError("column_copy_failed", `Email to ${recipient} was sent, but copying columns failed: ${error.message}`, { ...rowRef, error: error.message });
       }
     });
   });
 }
 
+/**
+ * Copies values within one realization row: for each pair the value of the
+ * From column (as read at the start of the run, i.e. the value the email was
+ * built from, a formula's computed result) is written into the To column.
+ * The To cell keeps its own number format; an unformatted To cell takes the
+ * From cell's format so dates and numbers display the same way.
+ * @param {Sheet} sheet Realization sheet.
+ * @param {number} rowNumber 1-based sheet row.
+ * @param {Array} recipientRow Row values read at the start of the run.
+ * @param {Array<{fromIdx: number, toIdx: number}>} columnCopies Resolved pairs.
+ */
+function copyColumnValues_(sheet, rowNumber, recipientRow, columnCopies) {
+  columnCopies.forEach(({ fromIdx, toIdx }) => {
+    const value = recipientRow[fromIdx];
+    const target = sheet.getRange(rowNumber, toIdx + 1);
+    const targetFormat = target.getNumberFormat();
+    target.setValue(value);
+    if (!targetFormat || targetFormat === "General") {
+      target.setNumberFormat(sheet.getRange(rowNumber, fromIdx + 1).getNumberFormat());
+    }
+    recipientRow[toIdx] = value;
+  });
+}

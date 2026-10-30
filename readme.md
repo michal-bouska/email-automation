@@ -75,6 +75,13 @@ which is listed in `appsscript.json`; re-authorize the script after deploying.
   Email Topic. Any other value is an HTML file name in the `HTML_TEMPLATES_FOLDER_ID` Drive
   folder, and Gmail drafts are then never searched. Plan headers are matched ignoring
   letter case and surrounding spaces.
+- **Copy From N / Copy To N** (optional plan columns, typically N = 1..5): after an email is
+  sent successfully, the value of the `Copy From N` column (a formula's computed result, as
+  used in the email) is written into the `Copy To N` column of the same row. An unformatted
+  target cell takes the source cell's number format. A pair with only one side filled, or
+  a column missing in the realization sheet, skips the whole plan row with a
+  `copy_columns_invalid` error so no email goes out without its snapshot. A failed copy
+  after sending is logged as `column_copy_failed` and keeps the sent timestamp.
 
 # Fio
 Set lock
