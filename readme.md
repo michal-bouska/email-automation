@@ -71,6 +71,10 @@ which is listed in `appsscript.json`; re-authorize the script after deploying.
 - Before a realization sheet is read, the criteria of its filter are cleared so all rows are
   visible (the filter range and dropdowns stay; personal filter views are not touched).
   Each clearing is logged as `realization_filter_cleared`.
+- **Template Source**: an empty cell or `draft` uses the Gmail draft whose subject equals
+  Email Topic. Any other value is an HTML file name in the `HTML_TEMPLATES_FOLDER_ID` Drive
+  folder, and Gmail drafts are then never searched. Plan headers are matched ignoring
+  letter case and surrounding spaces.
 
 # Fio
 Set lock

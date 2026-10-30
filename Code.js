@@ -238,18 +238,29 @@ function getHtmlTemplateFromDrive_(filename, subjectLine) {
 }
 
 /**
+ * True when the plan's Template Source names an HTML file on Drive
+ * (anything except an empty cell or "draft"). Such plans never touch
+ * Gmail drafts.
+ * @param {string} templateSource Value of the plan's Template Source column.
+ * @return {boolean}
+ */
+function isHtmlTemplateSource_(templateSource) {
+  const source = String(templateSource || "").trim().toLowerCase();
+  return source !== "" && source !== "draft";
+}
+
+/**
  * Unified template loader. Selects source based on plan's templateSource.
  * @param {object} plan The parsed plan row object.
  * @return {object} Template object with { message, attachments, inlineImages }.
  */
 function getEmailTemplate_(plan) {
-  const source = (plan.templateSource || "").trim().toLowerCase();
-
-  if (source === "" || source === "draft") {
+  if (!isHtmlTemplateSource_(plan.templateSource)) {
     return getGmailTemplateFromDrafts_(plan.emailTopic);
   }
 
-  const filename = plan.templateSource.trim();
+  // HTML file from Drive: Gmail drafts are never searched for this plan.
+  const filename = String(plan.templateSource).trim();
   const cached = DRAFT_CACHE.getHtmlTemplate(filename);
   if (cached) return cached;
 
@@ -564,7 +575,10 @@ function parsePlanData() {
     throw new Error("Plan data is missing or insufficient rows.");
   }
 
-  const headers = planData[0];
+  // Header lookup ignores surrounding spaces and letter case, so
+  // "Template source " still matches "Template Source".
+  const normalizedHeaders = planData[0].map(h => String(h).trim().toLowerCase());
+  const headers = { indexOf: name => normalizedHeaders.indexOf(name.toLowerCase()) };
   const emailTopicIdx = headers.indexOf("Email Topic");
   const conditionColumnIdx = headers.indexOf("Column Condition To Send");
   const sentDateColumnIdx = headers.indexOf("Column Sent");
